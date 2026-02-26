@@ -91,11 +91,11 @@ jobs:
                               if q not in used and len(q) >= 20:
                                   await create_video(q, int(time.time()))
                                   with open(HISTORY_FILE, "a") as f: f.write(q + "\n")
-                                  await asyncio.sleep(60) # انتظار دقيقة
+                                  await asyncio.sleep(1) # انتظار دقيقة
                                   if (time.time() - start_time) >= SESSION_LIMIT: break
                       await asyncio.sleep(300)
                   except Exception as e:
-                      print(f"Error: {e}"); await asyncio.sleep(60)
+                      print(f"Error: {e}"); await asyncio.sleep(1)
 
           asyncio.run(main())
 
