@@ -23,98 +23,142 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install edge-tts arabic-reshaper pytrends opencv-python pillow numpy requests
+          pip install edge-tts arabic-reshaper pytrends opencv-python pillow numpy requests nest_asyncio
 
       - name: Create and Run Script
         shell: python
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from pytrends.request import TrendReq
+
+          nest_asyncio.apply()
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
               sys.stdout.flush()
 
+          # --- إعدادات ثابتة ---
           VOICE = "ar-SA-ZariyahNeural"
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
           SESSION_LIMIT = 170 * 60 
+          
+          now = datetime.datetime.now()
+          current_time_str = now.strftime("%I:%M %p")
+          current_date_str = now.strftime("%Y-%m-%d")
+
           PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
+          POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو. 
+          لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة. 
+          أو قم بالدخول على الموقع المعروض أمامك باللون الأزرق. 
+          إلى هنا نكون قد وصلنا إلى نهاية الفيديو وأتمنى ان يكون الفيديو نال إعجابكم وأضاف لكم قيمة جديدة في يومكم الحالى. 
+          أود ان اعتذر لكم عن عدم قدرة عرض أى شئ خاص بمالك محتوى آخر هنا. 
+          نحن نتبع ونحترم جميع سياسات حقوق الملكية وإرشادات المنتدى الخاص بالمنصة. 
+          لذلك لا يمكن عرض أى شئ ليس من حقنا فى هذه القناة. 
+          تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}. 
+          فقط قم بزيارة موقعنا المعروض. آراكم في فيديو آخر."""
 
           def fix_arabic(text):
-              return reshape(text)[::-1]
+              # دمج الحروف (إذا ظهر النص معكوساً أضف [::-1] في نهاية السطر)
+              return reshape(text)
 
           async def create_video(title, index):
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
-                  log(f"🎬 معالجة فيديو جديد: {title}")
-                  communicate = edge_tts.Communicate(f"{PRE_TEXT} {title}", VOICE)
-                  await communicate.save(audio_p)
+                  log(f"🎬 إنشاء فيديو لـ: {title}")
+                  full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
                   
+                  # 1. توليد الصوت
+                  await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
+                  
+                  # 2. قياس المدة
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
-                  
+                  duration_rounded = int(np.ceil(duration))
+
                   if not os.path.exists("font.ttf"):
                       with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
                   
                   fps, size = 24, (1280, 720)
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-                  font = ImageFont.truetype("font.ttf", 60)
+                  
+                  font_main = ImageFont.truetype("font.ttf", 70)
+                  font_sub = ImageFont.truetype("font.ttf", 60)
+                  font_timer = ImageFont.truetype("font.ttf", 30)
 
-                  for _ in range(int(duration * fps)):
-                      frame = np.zeros((720, 1280, 3), np.uint8)
-                      pil_img = Image.fromarray(frame)
+                  log(f"⏳ توليد الإطارات (المدة: {duration:.2f} ثانية)...")
+                  for frame_num in range(int(duration * fps)):
+                      img = np.zeros((720, 1280, 3), np.uint8)
+                      pil_img = Image.fromarray(img)
                       draw = ImageDraw.Draw(pil_img)
-                      draw.text((640, 360), fix_arabic(title), font=font, fill=(255,255,255), anchor="mm")
-                      draw.text((640, 450), URL_TEXT, font=font, fill=(0,255,255), anchor="mm")
+
+                      clean_title = fix_arabic(title)
+                      current_second = frame_num // fps
+                      rem = max(0, duration_rounded - current_second)
+                      timer_txt = f"00:{rem:02d}"
+
+                      # حساب المسافات
+                      w1, h1 = draw.textbbox((0, 0), clean_title, font=font_main)[2:]
+                      w2, h2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2:]
+                      w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
+
+                      curr_y = 300 
+                      draw.text(((1280-w1)/2, curr_y), clean_title, font=font_main, fill=(255, 255, 255))
+                      curr_y += h1 + 10
+                      draw.text(((1280-w2)/2, curr_y), URL_TEXT, font=font_sub, fill=(255, 237, 0))
+                      curr_y += h2 + 10
+                      draw.text(((1280-w3)/2, curr_y), timer_txt, font=font_timer, fill=(0, 255, 0))
+
                       out.write(np.array(pil_img))
                   out.release()
 
+                  # 3. الدمج
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
                   
+                  # 4. الرفع
                   with open(final_p, "rb") as f:
-                      r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f}, timeout=60)
-                  log(f"✅ تم الرفع بنجاح: {r.text.strip()}")
+                      r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f}, timeout=120)
+                  log(f"✅ تم الرفع: {r.text.strip()}")
                   
               except Exception as e:
-                  log(f"❌ فشل في هذا الفيديو: {e}")
+                  log(f"❌ خطأ: {e}")
               finally:
                   for f in [audio_p, video_p, final_p]: 
                       if os.path.exists(f): os.remove(f)
 
           async def main():
               start_time = time.time()
-              log("🚀 بدأت الجلسة السريعة (بدون انتظار)")
+              log("🚀 انطلاق الجلسة (بدون انتظار)")
               pytrends = TrendReq(hl='ar', tz=0)
               
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
-                      log("🔍 جلب أحدث التريندات...")
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
-                      df = pytrends.related_queries()['مدبلج']['top']
+                      results = pytrends.related_queries()
                       
                       used = []
                       if os.path.exists(HISTORY_FILE):
                           with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
                       
-                      if df is not None:
-                          new_titles = [q for q in df['query'].tolist() if q not in used and len(q) >= 20]
-                          log(f"وجدنا {len(new_titles)} فيديو جديد للعمل عليها.")
+                      if 'مدبلج' in results and results['مدبلج']['top'] is not None:
+                          df_top = results['مدبلج']['top']
+                          new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used]
                           
+                          log(f"وجدنا {len(new_titles)} تريند جديد.")
                           for q in new_titles:
-                              # إنشاء الفيديوهات بدون أي sleep بينها
                               await create_video(q, int(time.time()))
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                               
+                              # لا يوجد انتظار هنا (بدون sleep)
                               if (time.time() - start_time) >= SESSION_LIMIT: break
                       
-                      log("🏁 انتهت القائمة الحالية، فحص جديد بعد 30 ثانية فقط...")
-                      await asyncio.sleep(30) # انتظار بسيط جداً فقط لتجنب حظر جوجل تريندز
+                      log("انتظار 30 ثانية لتحديث التريندات...")
+                      await asyncio.sleep(30)
                   except Exception as e:
-                      log(f"⚠️ خطأ: {e}")
+                      log(f"⚠️ خطأ عام: {e}")
                       await asyncio.sleep(10)
 
           asyncio.run(main())
@@ -125,5 +169,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add history.txt || echo "No history"
-          git commit -m "Update video history [skip ci]" || echo "No changes"
+          git commit -m "Update history [skip ci]" || echo "No changes"
           git push || echo "Push failed"
