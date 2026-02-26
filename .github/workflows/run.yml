@@ -1,0 +1,108 @@
+name: Continuous Video Generator
+
+on:
+  schedule:
+    - cron: "0 */3 * * *" # تشغيل تلقائي كل 3 ساعات
+  workflow_dispatch:      # تشغيل يدوي عند الرغبة
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install edge-tts arabic-reshaper pytrends opencv-python pillow numpy requests nest_asyncio
+
+      - name: Create and Run Script
+        shell: python
+        run: |
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np
+          from PIL import Image, ImageDraw, ImageFont
+          from arabic_reshaper import reshape
+          from pytrends.request import TrendReq
+
+          # --- الإعدادات ---
+          VOICE = "ar-SA-ZariyahNeural"
+          URL_TEXT = "www.mshort.do.am"
+          FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
+          HISTORY_FILE = "history.txt"
+          SESSION_LIMIT = 170 * 60 # 170 دقيقة لضمان الحفظ قبل انتهاء الـ 3 ساعات
+          PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
+
+          def fix_arabic(text):
+              return reshape(text)[::-1]
+
+          async def create_video(title, index):
+              audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
+              await edge_tts.Communicate(f"{PRE_TEXT} {title}", VOICE).save(audio_p)
+              
+              # جلب المدة
+              d_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {audio_p}"
+              duration = float(subprocess.check_output(d_cmd, shell=True))
+              
+              if not os.path.exists("font.ttf"):
+                  with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
+              
+              fps, size = 24, (1280, 720)
+              out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
+              font = ImageFont.truetype("font.ttf", 60)
+
+              for _ in range(int(duration * fps)):
+                  frame = np.zeros((720, 1280, 3), np.uint8)
+                  pil_img = Image.fromarray(frame)
+                  draw = ImageDraw.Draw(pil_img)
+                  draw.text((640, 360), fix_arabic(title), font=font, fill=(255,255,255), anchor="mm")
+                  draw.text((640, 450), URL_TEXT, font=font, fill=(0,255,255), anchor="mm")
+                  out.write(np.array(pil_img))
+              out.release()
+
+              os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
+              with open(final_p, "rb") as f:
+                  r = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f})
+              print(f"✅ {title} -> {r.text.strip()}")
+              for f in [audio_p, video_p, final_p]: 
+                  if os.path.exists(f): os.remove(f)
+
+          async def main():
+              start_time = time.time()
+              pytrends = TrendReq(hl='ar')
+              while (time.time() - start_time) < SESSION_LIMIT:
+                  try:
+                      pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
+                      df = pytrends.related_queries()['مدبلج']['top']
+                      if df is not None:
+                          used = []
+                          if os.path.exists(HISTORY_FILE):
+                              with open(HISTORY_FILE, "r") as f: used = f.read().splitlines()
+                          
+                          for q in df['query'].tolist():
+                              if q not in used and len(q) >= 20:
+                                  await create_video(q, int(time.time()))
+                                  with open(HISTORY_FILE, "a") as f: f.write(q + "\n")
+                                  await asyncio.sleep(60) # انتظار دقيقة
+                                  if (time.time() - start_time) >= SESSION_LIMIT: break
+                      await asyncio.sleep(300)
+                  except Exception as e:
+                      print(f"Error: {e}"); await asyncio.sleep(60)
+
+          asyncio.run(main())
+
+      - name: Save and Push Progress
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add history.txt || echo "No history to add"
+          git commit -m "Update video history" || echo "No changes to commit"
+          git push || echo "No changes to push"
