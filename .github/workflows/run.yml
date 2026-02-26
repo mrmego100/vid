@@ -131,32 +131,49 @@ jobs:
 
           async def main():
               start_time = time.time()
-              log("🚀 انطلاق الجلسة (بدون انتظار)")
+              log("🚀 انطلاق الجلسة (بدون انتظار) مع تصفية الكلمات")
               pytrends = TrendReq(hl='ar', tz=0)
+              
+              # قائمة الكلمات التي تريد استبعادها
+              excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
               
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
+                      log("🔍 جلب أحدث التريندات...")
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
                       
                       used = []
                       if os.path.exists(HISTORY_FILE):
-                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
+                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: 
+                              used = f.read().splitlines()
                       
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                           df_top = results['مدبلج']['top']
-                          new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used]
                           
-                          log(f"وجدنا {len(new_titles)} تريند جديد.")
+                          # التعديل هنا: إضافة شرط التأكد من عدم وجود أي كلمة مستبعدة في العنوان
+                          new_titles = [
+                              w for w in df_top['query'].tolist() 
+                              if "مدبلج" in w 
+                              and len(w) >= 20 
+                              and w not in used 
+                              and not any(word in w for word in excluded_words)
+                          ]
+                          
+                          log(f"وجدنا {len(new_titles)} تريند مطابق للشروط بعد الاستبعاد.")
+                          
                           for q in new_titles:
                               await create_video(q, int(time.time()))
-                              with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
+                              with open(HISTORY_FILE, "a", encoding="utf-8") as f: 
+                                  f.write(q + "\n")
                               
-                              # لا يوجد انتظار هنا (بدون sleep)
-                              if (time.time() - start_time) >= SESSION_LIMIT: break
+                              # التحقق من الوقت داخل الحلقة
+                              if (time.time() - start_time) >= SESSION_LIMIT: 
+                                  break
                       
-                      log("انتظار 30 ثانية لتحديث التريندات...")
+                      log("🏁 انتهت القائمة، فحص جديد بعد 30 ثانية...")
                       await asyncio.sleep(30)
+                      
                   except Exception as e:
                       log(f"⚠️ خطأ عام: {e}")
                       await asyncio.sleep(10)
