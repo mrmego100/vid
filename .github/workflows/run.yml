@@ -33,7 +33,7 @@ jobs:
               "type": "service_account",
               "project_id": "seventh-terrain-488723-c0",
               "private_key_id": "65598b4f87ac78ddbb974719c2a75cb3897eff18",
-              "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCuV5TfZGd1fxZz\nI5J+4FAi/99zkvvWo0aImGQP8waiT5JTEv3nhr2yIKG9g55WM3dZHsQIv4RzAfYX\nKiZ7RV4qQ6VLzz2KbCQ10TUB/3zGhov+GV0VZoKTedkJyPHdoylfoLRNjwRM6sGL\nW6Y3J2VyzI0I3DeruemCuURwVMNwpSv/5eLe8O+1vvDYDYMwf+5yS6rcJR7VShnC\ng14GQCoYmLUrGrVAr5b50uywtBcRqh/T7df8+j+apy6fueOE+wJs9qFmzrNs3gnH\n6geO5sjXrUwI1or2vfUDndu5nKeijYbxWODcbCZzRdjJ7cqHnzy7jJ269j6XmIpj\n1j5zTRh5AgMBAAECgf9C6Nn54k7SiTPUfJJ8nxoiVJEtifudJIytX88HT/37zQ4b\nU+6eLNggxOVOFnVuH9JuIaCauuXaPaZ0vXiHVtgM4GlP7vlvZpF/FguB+MuqZXjU\nzGctD2qNrvXdC4HHzhbS3JpWKc08t9wP39yqzjPhGyAFhn7XKUK1KOVbNyzKzfck\nK4XeRnMrtCLc/YVMQCvzbf4gIqKjOBuLGSKZBCDBsb+ER4uYGPkD4SZa9HAhm/DT\nycgoaJ+exoAiYrAForVuraL5dLHT6WTIvBJho5pGz6xybCc0KgQx9n0qgB7mws61\nXRbcfohnpSbYkhgBaUju2pQrCx47PVafoF1OoHUCgYEA12oww4+LqBjMGC4X7y6H\neo39nXGO/9xNwGMxtd6gt55LLtWBlTRNwzVnwr92htD8v1V5ZbOSK5ECH+Sv3Zg/\nODit2aChL7IKKPCrdEwgg4HsuCPIB7OS87/9on3WnK7ZAvA2vM7iEOH3fOd8D7vQ\nmu+1Dnsy2bmsj46h7Wd1ir0CgYEAzzBjRP3YZl6qZIpczTs87dRoQWJvqQJ8CTey\n5tSAPk54gTmEHmxqxctRVFKtfcn/6sGamDVeOb5Yh3mLdtubRSRLNM+1N22veWjS\n0X4nXvWRzn/W4gmraI1JwlfPt9QYSXVJwHQ+JXbJU3CFbbuCUCApmurDTLNM20VW\nOHdYfm0CgYBOZkuRITFG4J+HPV9goaKVLBBduPK+lEOH/ZIeCwSbT3U1emdLEloq\n7cjxzBUrQ+x5BnbEWPKeAIyxZt3K3JpFr/s19Yw0e6vO8qi0DvDWa/bnnb4zb1vQ\nctOwy/PL2qcItrx1QyZr1pHoV6eDYmutuAhBWP1M2JLBPLwaV0kkUQKBgQDId8Yl\nNAQVENWHUET4oq+SYqm5Ufg+LFQ9SvJD3Cp1ntGEH1WRZk9tMAtyLkkFY9TFnSvq\nyABymJTqCBWEHHpAzRwjbjGl/vAA5gbNgmWvwKWiixksPjTmhYZvjy1BbetN8Dk7\nCH41G5kyrbW8dehhhK0c4rey1+2uX4lMO1WZhQKBgEQjgiiBRqjcWZAYuZgeSewe\nIhrFlPCnn5w0QwCpz/25d60YACoVJxZxHDApZmzHxijGgTqZfNS+Za9kgxItz2AV\nKINr6CG9ZtHJbTYkwTE+MIV6L+FdTLT3sPOD/LJWsnsgWYXtZl8HjJPVwpKQIVSi\nLYQ7rPUgPwi7oRRl1Rfl\n-----END PRIVATE KEY-----\n",
+              "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCuV5TfZGd1fxZz\nI5J+4FAi/99zkvvWo0aImGQP8waiT5JTEv3nhr2yIKG9g55WM3dZHsQIv4RzAfYX\nKiZ7RV4qQ6VLzz2KbCQ10TUB/3zGhov+GV0VZoKTedkJyPHdoylfoLRNjwRM6sGL\nW6Y3J2VyzI0I3DeruemCuURwVMNwpSv/5eLe8O+1vvDYDYMwf+5yS6rcJR7VShnC\ng14GQCoYmLUrGrVAr5b50uywtBcRqh/T7df8+j+apy6fueOE+wJs9qFmzrNs3gnH\n6geO5sjXrUwI1or2vfUDndu5nKeijYbxWODcbCZzRdjJ7cqHnzy7jJ269j6XmIpj\n1j5zTRh5AgMBAAECgf9C6Nn54k7SiTPUfJJ8nxoiVJEtifudJIytX88HT/37zQ4b\nU+6eLNggxOVOFnVuH9JuIaCauuXaPaZ0vXiHVtgM4GlP7vlvZpF/FguB+MuqZXjU\nzGctD2qNrvXdC4HHzhbS3JpWKc08t9wP39yqzjPhGyAFhn7XKUK1KOVbNyzKzfck\nK4XeRnMrtCLc/YVMQCvzbf4gIqKjOBuLGSKZBCDBsb+ER4uYGPkD4SZa9HAhm/DT\nycgoaJ+exoAiYrAForVuraL5dLHT6WTIvBJho5pGz6xybCc0KgQx9n0qgB7mws61\nXRbcfohnpSbYkhgBaUju2pQrCx47PVafoF1OoHUCgYEA12oww4+LqBjMGC4X7y6H\neo39nXGO/9xNwGMxtd6gt55LLtWBlTRNwzVnwr92htD8v1V5ZbOSK5ECH+Sv3Zg/\nODit2aChL7IKKPCrdEwgg4HsuCPIB7OS87/9on3WnK7ZAvA2vM7iEOH3fOd8D7vQ\mu+1Dnsy2bmsj46h7Wd1ir0CgYEAzzBjRP3YZl6qZIpczTs87dRoQWJvqQJ8CTey\n5tSAPk54gTmEHmxqxctRVFKtfcn/6sGamDVeOb5Yh3mLdtubRSRLNM+1N22veWjS\n0X4nXvWRzn/W4gmraI1JwlfPt9QYSXVJwHQ+JXbJU3CFbbuCUCApmurDTLNM20VW\nOHdYfm0CgYBOZkuRITFG4J+HPV9goaKVLBBduPK+lEOH/ZIeCwSbT3U1emdLEloq\n7cjxzBUrQ+x5BnbEWPKeAIyxZt3K3JpFr/s19Yw0e6vO8qi0DvDWa/bnnb4zb1vQ\nctOwy/PL2qcItrx1QyZr1pHoV6eDYmutuAhBWP1M2JLBPLwaV0kkUQKBgQDId8Yl\nNAQVENWHUET4oq+SYqm5Ufg+LFQ9SvJD3Cp1ntGEH1WRZk9tMAtyLkkFY9TFnSvq\nyABymJTqCBWEHHpAzRwjbjGl/vAA5gbNgmWvwKWiixksPjTmhYZvjy1BbetN8Dk7\nCH41G5kyrbW8dehhhK0c4rey1+2uX4lMO1WZhQKBgEQjgiiBRqjcWZAYuZgeSewe\nIhrFlPCnn5w0QwCpz/25d60YACoVJxZxHDApZmzHxijGgTqZfNS+Za9kgxItz2AV\nKINr6CG9ZtHJbTYkwTE+MIV6L+FdTLT3sPOD/LJWsnsgWYXtZl8HjJPVwpKQIVSi\nLYQ7rPUgPwi7oRRl1Rfl\n-----END PRIVATE KEY-----\n",
               "client_email": "rew-181@seventh-terrain-488723-c0.iam.gserviceaccount.com",
               "client_id": "105736407546717657230",
               "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -54,11 +54,13 @@ jobs:
           nest_asyncio.apply()
 
           # --- إعدادات جوجل درايف ---
-          # تأكد من تغيير الرقم أدناه إلى ID المجلد الخاص بك في جوجل درايف
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
               info = json.loads(os.environ.get('GDRIVE_JSON'))
+              # التعديل الهام هنا لإصلاح مشكلة الـ JWT Signature
+              if 'private_key' in info:
+                  info['private_key'] = info['private_key'].replace('\\n', '\n')
               creds = service_account.Credentials.from_service_account_info(info)
               return build('drive', 'v3', credentials=creds)
 
@@ -72,7 +74,6 @@ jobs:
           HISTORY_FILE = "history.txt"
           SESSION_LIMIT = 170 * 60 
           
-          # استخراج الوقت لرسالة الصوت
           now = datetime.datetime.now()
           current_time_str = now.strftime("%I:%M %p")
           current_date_str = now.strftime("%Y-%m-%d")
@@ -96,11 +97,8 @@ jobs:
               try:
                   log(f"🎬 معالجة: {title}")
                   full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
-                  
-                  # 1. الصوت
                   await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
                   
-                  # 2. المدة
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   duration_rounded = int(np.ceil(duration))
@@ -110,7 +108,6 @@ jobs:
                   
                   fps, size = 24, (1280, 720)
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-                  
                   font_main = ImageFont.truetype("font.ttf", 70)
                   font_sub = ImageFont.truetype("font.ttf", 60)
                   font_timer = ImageFont.truetype("font.ttf", 30)
@@ -122,11 +119,9 @@ jobs:
                       clean_title = fix_arabic(title)
                       rem = max(0, duration_rounded - (frame_num // fps))
                       timer_txt = f"00:{rem:02d}"
-
                       w1, h1 = draw.textbbox((0, 0), clean_title, font=font_main)[2:]
                       w2, h2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2:]
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
-
                       curr_y = 300 
                       draw.text(((1280-w1)/2, curr_y), clean_title, font=font_main, fill=(255, 255, 255))
                       curr_y += h1 + 10
@@ -136,10 +131,8 @@ jobs:
                       out.write(np.array(pil_img))
                   out.release()
 
-                  # 3. دمج نهائي
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
                   
-                  # 4. الرفع لجوجل درايف
                   log(f"📤 جاري رفع {title}...")
                   file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
                   media = MediaFileUpload(final_p, mimetype='video/mp4')
@@ -160,40 +153,27 @@ jobs:
               except Exception as e:
                   log(f"❌ عطل في جوجل درايف: {e}")
                   return
-
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
-              
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
-                      
                       used = []
                       if os.path.exists(HISTORY_FILE):
                           with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                      
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                           df_top = results['مدبلج']['top']
-                          new_titles = [
-                              w for w in df_top['query'].tolist() 
-                              if "مدبلج" in w and len(w) >= 20 and w not in used 
-                              and not any(word in w for word in excluded_words)
-                          ]
-                          
-                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد مطابق.")
+                          new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
+                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد.")
                           for q in new_titles:
-                              # الرفع فوراً بدون أي انتظار
                               await create_video(q, int(time.time()), drive_service)
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                               if (time.time() - start_time) >= SESSION_LIMIT: break
-                      
-                      # نوم قصير جداً لتجنب حظر جوجل تريندز عند انتهاء القائمة
                       await asyncio.sleep(30)
                   except Exception as e:
                       log(f"⚠️ خطأ: {e}")
                       await asyncio.sleep(10)
-
           asyncio.run(main())
 
       - name: Save Progress
