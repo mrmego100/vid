@@ -33,7 +33,7 @@ jobs:
               "type": "service_account",
               "project_id": "seventh-terrain-488723-c0",
               "private_key_id": "65598b4f87ac78ddbb974719c2a75cb3897eff18",
-              "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCuV5TfZGd1fxZz\nI5J+4FAi/99zkvvWo0aImGQP8waiT5JTEv3nhr2yIKG9g55WM3dZHsQIv4RzAfYX\nKiZ7RV4qQ6VLzz2KbCQ10TUB/3zGhov+GV0VZoKTedkJyPHdoylfoLRNjwRM6sGL\nW6Y3J2VyzI0I3DeruemCuURwVMNwpSv/5eLe8O+1vvDYDYMwf+5yS6rcJR7VShnC\ng14GQCoYmLUrGrVAr5b50uywtBcRqh/T7df8+j+apy6fueOE+wJs9qFmzrNs3gnH\n6geO5sjXrUwI1or2vfUDndu5nKeijYbxWODcbCZzRdjJ7cqHnzy7jJ269j6XmIpj\n1j5zTRh5AgMBAAECgf9C6Nn54k7SiTPUfJJ8nxoiVJEtifudJIytX88HT/37zQ4b\nU+6eLNggxOVOFnVuH9JuIaCauuXaPaZ0vXiHVtgM4GlP7vlvZpF/FguB+MuqZXjU\nzGctD2qNrvXdC4HHzhbS3JpWKc08t9wP39yqzjPhGyAFhn7XKUK1KOVbNyzKzfck\nK4XeRnMrtCLc/YVMQCvzbf4gIqKjOBuLGSKZBCDBsb+ER4uYGPkD4SZa9HAhm/DT\nycgoaJ+exoAiYrAForVuraL5dLHT6WTIvBJho5pGz6xybCc0KgQx9n0qgB7mws61\nXRbcfohnpSbYkhgBaUju2pQrCx47PVafoF1OoHUCgYEA12oww4+LqBjMGC4X7y6H\neo39nXGO/9xNwGMxtd6gt55LLtWBlTRNwzVnwr92htD8v1V5ZbOSK5ECH+Sv3Zg/\nODit2aChL7IKKPCrdEwgg4HsuCPIB7OS87/9on3WnK7ZAvA2vM7iEOH3fOd8D7vQ\mu+1Dnsy2bmsj46h7Wd1ir0CgYEAzzBjRP3YZl6qZIpczTs87dRoQWJvqQJ8CTey\n5tSAPk54gTmEHmxqxctRVFKtfcn/6sGamDVeOb5Yh3mLdtubRSRLNM+1N22veWjS\n0X4nXvWRzn/W4gmraI1JwlfPt9QYSXVJwHQ+JXbJU3CFbbuCUCApmurDTLNM20VW\nOHdYfm0CgYBOZkuRITFG4J+HPV9goaKVLBBduPK+lEOH/ZIeCwSbT3U1emdLEloq\n7cjxzBUrQ+x5BnbEWPKeAIyxZt3K3JpFr/s19Yw0e6vO8qi0DvDWa/bnnb4zb1vQ\nctOwy/PL2qcItrx1QyZr1pHoV6eDYmutuAhBWP1M2JLBPLwaV0kkUQKBgQDId8Yl\nNAQVENWHUET4oq+SYqm5Ufg+LFQ9SvJD3Cp1ntGEH1WRZk9tMAtyLkkFY9TFnSvq\nyABymJTqCBWEHHpAzRwjbjGl/vAA5gbNgmWvwKWiixksPjTmhYZvjy1BbetN8Dk7\nCH41G5kyrbW8dehhhK0c4rey1+2uX4lMO1WZhQKBgEQjgiiBRqjcWZAYuZgeSewe\nIhrFlPCnn5w0QwCpz/25d60YACoVJxZxHDApZmzHxijGgTqZfNS+Za9kgxItz2AV\nKINr6CG9ZtHJbTYkwTE+MIV6L+FdTLT3sPOD/LJWsnsgWYXtZl8HjJPVwpKQIVSi\nLYQ7rPUgPwi7oRRl1Rfl\n-----END PRIVATE KEY-----\n",
+              "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCuV5TfZGd1fxZz\\nI5J+4FAi/99zkvvWo0aImGQP8waiT5JTEv3nhr2yIKG9g55WM3dZHsQIv4RzAfYX\\nKiZ7RV4qQ6VLzz2KbCQ10TUB/3zGhov+GV0VZoKTedkJyPHdoylfoLRNjwRM6sGL\\nW6Y3J2VyzI0I3DeruemCuURwVMNwpSv/5eLe8O+1vvDYDYMwf+5yS6rcJR7VShnC\\ng14GQCoYmLUrGrVAr5b50uywtBcRqh/T7df8+j+apy6fueOE+wJs9qFmzrNs3gnH\\n6geO5sjXrUwI1or2vfUDndu5nKeijYbxWODcbCZzRdjJ7cqHnzy7jJ269j6XmIpj\\n1j5zTRh5AgMBAAECgf9C6Nn54k7SiTPUfJJ8nxoiVJEtifudJIytX88HT/37zQ4b\\nU+6eLNggxOVOFnVuH9JuIaCauuXaPaZ0vXiHVtgM4GlP7vlvZpF/FguB+MuqZXjU\\nzGctD2qNrvXdC4HHzhbS3JpWKc08t9wP39yqzjPhGyAFhn7XKUK1KOVbNyzKzfck\\nK4XeRnMrtCLc/YVMQCvzbf4gIqKjOBuLGSKZBCDBsb+ER4uYGPkD4SZa9HAhm/DT\\nycgoaJ+exoAiYrAForVuraL5dLHT6WTIvBJho5pGz6xybCc0KgQx9n0qgB7mws61\\nXRbcfohnpSbYkhgBaUju2pQrCx47PVafoF1OoHUCgYEA12oww4+LqBjMGC4X7y6H\\neo39nXGO/9xNwGMxtd6gt55LLtWBlTRNwzVnwr92htD8v1V5ZbOSK5ECH+Sv3Zg/\\nODit2aChL7IKKPCrdEwgg4HsuCPIB7OS87/9on3WnK7ZAvA2vM7iEOH3fOd8D7vQ\\nmu+1Dnsy2bmsj46h7Wd1ir0CgYEAzzBjRP3YZl6qZIpczTs87dRoQWJvqQJ8CTey\\n5tSAPk54gTmEHmxqxctRVFKtfcn/6sGamDVeOb5Yh3mLdtubRSRLNM+1N22veWjS\\n0X4nXvWRzn/W4gmraI1JwlfPt9QYSXVJwHQ+JXbJU3CFbbuCUCApmurDTLNM20VW\\nOHdYfm0CgYBOZkuRITFG4J+HPV9goaKVLBBduPK+lEOH/ZIeCwSbT3U1emdLEloq\\n7cjxzBUrQ+x5BnbEWPKeAIyxZt3K3JpFr/s19Yw0e6vO8qi0DvDWa/bnnb4zb1vQ\\nctOwy/PL2qcItrx1QyZr1pHoV6eDYmutuAhBWP1M2JLBPLwaV0kkUQKBgQDId8Yl\\nNAQVENWHUET4oq+SYqm5Ufg+LFQ9SvJD3Cp1ntGEH1WRZk9tMAtyLkkFY9TFnSvq\\nyABymJTqCBWEHHpAzRwjbjGl/vAA5gbNgmWvwKWiixksPjTmhYZvjy1BbetN8Dk7\\nCH41G5kyrbW8dehhhK0c4rey1+2uX4lMO1WZhQKBgEQjgiiBRqjcWZAYuZgeSewe\\nIhrFlPCnn5w0QwCpz/25d60YACoVJxZxHDApZmzHxijGgTqZfNS+Za9kgxItz2AV\\nKINr6CG9ZtHJbTYkwTE+MIV6L+FdTLT3sPOD/LJWsnsgWYXtZl8HjJPVwpKQIVSi\\nLYQ7rPUgPwi7oRRl1Rfl\\n-----END PRIVATE KEY-----\\n",
               "client_email": "rew-181@seventh-terrain-488723-c0.iam.gserviceaccount.com",
               "client_id": "105736407546717657230",
               "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -57,9 +57,15 @@ jobs:
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              info = json.loads(os.environ.get('GDRIVE_JSON'))
-              creds = service_account.Credentials.from_service_account_info(info)
-              return build('drive', 'v3', credentials=creds)
+              try:
+                  # تحميل JSON مع استبدال علامات الهروب اليدوية لضمان عدم حدوث خطأ
+                  env_json = os.environ.get('GDRIVE_JSON')
+                  info = json.loads(env_json, strict=False)
+                  creds = service_account.Credentials.from_service_account_info(info)
+                  return build('drive', 'v3', credentials=creds)
+              except Exception as e:
+                  print(f"Auth Error Details: {e}")
+                  raise
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -141,7 +147,7 @@ jobs:
                   log(f"✅ تم بنجاح! ID: {file.get('id')}")
                   
               except Exception as e:
-                  log(f"❌ فشل: {e}")
+                  log(f"❌ فشل في الفيديو {title}: {e}")
               finally:
                   for f in [audio_p, video_p, final_p]: 
                       if os.path.exists(f): os.remove(f)
@@ -149,6 +155,10 @@ jobs:
           async def main():
               start_time = time.time()
               log("🚀 الجلسة تعمل بأقصى سرعة")
+              
+              if not os.path.exists(HISTORY_FILE):
+                  with open(HISTORY_FILE, "w", encoding="utf-8") as f: pass
+
               try:
                   drive_service = get_drive_service()
               except Exception as e:
@@ -163,9 +173,8 @@ jobs:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
                       
-                      used = []
-                      if os.path.exists(HISTORY_FILE):
-                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
+                      with open(HISTORY_FILE, "r", encoding="utf-8") as f: 
+                          used = f.read().splitlines()
                       
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                           df_top = results['مدبلج']['top']
@@ -183,7 +192,7 @@ jobs:
                       
                       await asyncio.sleep(30)
                   except Exception as e:
-                      log(f"⚠️ خطأ: {e}")
+                      log(f"⚠️ خطأ أثناء البحث: {e}")
                       await asyncio.sleep(10)
 
           asyncio.run(main())
@@ -193,6 +202,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add history.txt || echo "No history"
-          git commit -m "Update history [skip ci]" || echo "No changes"
+          [ -f history.txt ] && git add history.txt || echo "No history file"
+          git commit -m "Update history [skip ci]" || echo "No changes to commit"
           git push || echo "Push failed"
