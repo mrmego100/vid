@@ -55,7 +55,7 @@ jobs:
 
           # --- إعدادات جوجل درايف ---
           # تأكد من تغيير الرقم أدناه إلى ID المجلد الخاص بك في جوجل درايف
-          FOLDER_ID = "1W7K_lD9T3Z_N-EXAMPLE_ID" 
+          FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
               info = json.loads(os.environ.get('GDRIVE_JSON'))
