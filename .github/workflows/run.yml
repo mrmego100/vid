@@ -29,7 +29,6 @@ jobs:
       - name: Create and Run Script
         shell: python
         env:
-          # بنستخدم Base64 هنا عشان نضمن سلامة المفتاح 100%
           GDRIVE_JSON_B64: ${{ secrets.GDRIVE_JSON }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -44,7 +43,6 @@ jobs:
 
           nest_asyncio.apply()
 
-          # --- تنظيف الجلسات ---
           def delete_old_runs():
               try:
                   token = os.environ.get('GH_TOKEN')
@@ -54,28 +52,30 @@ jobs:
                   res = requests.get(url, headers=headers)
                   if res.status_code == 200:
                       runs = res.json().get('workflow_runs', [])
-                      for run in runs[10:]:
+                      for run in runs[5:]:
                           requests.delete(f"{url}/{run['id']}", headers=headers)
               except: pass
 
-          # --- توثيق جوجل درايف (إصلاح الـ Signature) ---
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
               try:
                   b64_str = os.environ.get('GDRIVE_JSON_B64').strip()
-                  # فك التشفير برمجياً لضمان عدم ضياع أي سطر (\n)
-                  decoded_data = base64.b64decode(b64_str).decode('utf-8')
-                  info = json.loads(decoded_data)
+                  # فك تشفير الـ Base64 لضمان سلامة النص
+                  decoded_bytes = base64.b64decode(b64_str)
+                  info = json.loads(decoded_bytes)
                   
                   if 'private_key' in info:
-                      # تنظيف المفتاح من أي تنسيق خاطئ (إصلاح JWT Signature)
-                      info['private_key'] = info['private_key'].replace('\\n', '\n').strip()
+                      # تنظيف المفتاح: تحويل \\n إلى \n حقيقية (هذا هو لب المشكلة)
+                      # قمنا بإضافة معالجة مزدوجة لضمان عملها مهما كان شكل النسخ
+                      raw_key = info['private_key']
+                      clean_key = raw_key.replace('\\\\n', '\n').replace('\\n', '\n').strip()
+                      info['private_key'] = clean_key
                   
                   creds = service_account.Credentials.from_service_account_info(info)
                   return build('drive', 'v3', credentials=creds)
               except Exception as e:
-                  print(f"❌ Critical Auth Error: {e}")
+                  print(f"❌ Auth Error Details: {e}")
                   raise
 
           def log(msg):
@@ -110,34 +110,25 @@ jobs:
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
                   log(f"🎬 Processing: {title}")
-                  full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
-                  await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
+                  await edge_tts.Communicate(f"{PRE_TEXT} {title} {POST_TEXT}", VOICE).save(audio_p)
                   
-                  d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
+                  d_cmd = ["ffprobe", "-v", "error", "-show_entries", "duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
-                  duration_int = int(np.ceil(duration))
-
+                  
                   if not os.path.exists("font.ttf"):
                       with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
                   
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), 24, (1280, 720))
                   f_main = ImageFont.truetype("font.ttf", 70)
-                  f_sub = ImageFont.truetype("font.ttf", 55)
-
+                  
                   for frame_num in range(int(duration * 24)):
                       img = np.zeros((720, 1280, 3), np.uint8)
                       pil_img = Image.fromarray(img)
                       draw = ImageDraw.Draw(pil_img)
                       txt = fix_arabic(title)
-                      rem = max(0, duration_int - (frame_num // 24))
-                      timer = f"00:{rem:02d}"
-
-                      w1 = draw.textbbox((0, 0), txt, font=f_main)[2]
-                      w2 = draw.textbbox((0, 0), URL_TEXT, font=f_sub)[2]
-
-                      draw.text(((1280-w1)/2, 280), txt, font=f_main, fill=(255, 255, 255))
-                      draw.text(((1280-w2)/2, 420), URL_TEXT, font=f_sub, fill=(255, 237, 0))
-                      draw.text((600, 550), timer, font=f_sub, fill=(0, 255, 0))
+                      w = draw.textbbox((0, 0), txt, font=f_main)[2]
+                      draw.text(((1280-w)/2, 300), txt, font=f_main, fill=(255, 255, 255))
+                      draw.text((450, 450), URL_TEXT, font=f_main, fill=(255, 237, 0))
                       out.write(np.array(pil_img))
                   out.release()
 
@@ -157,7 +148,7 @@ jobs:
           async def main():
               delete_old_runs()
               start_time = time.time()
-              log("🚀 Started")
+              log("🚀 Script Started")
               try:
                   drive_service = get_drive_service()
               except: return
@@ -167,17 +158,10 @@ jobs:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
-                      used = []
-                      if os.path.exists(HISTORY_FILE):
-                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                      
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                          for q in results['مدبلج']['top']['query'].tolist():
-                              if "مدبلج" in q and len(q) > 15 and q not in used:
-                                  await create_video(q, int(time.time()), drive_service)
-                                  with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
-                                  if (time.time() - start_time) >= SESSION_LIMIT: break
-                      await asyncio.sleep(200)
+                          for q in results['مدبلج']['top']['query'].tolist()[:5]:
+                              await create_video(q, int(time.time()), drive_service)
+                      await asyncio.sleep(300)
                   except Exception as e:
                       log(f"⚠️ Error: {e}")
                       await asyncio.sleep(60)
