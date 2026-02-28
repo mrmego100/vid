@@ -142,7 +142,7 @@ jobs:
               log("🚀 الجلسة تعمل")
               dbx_client = get_dropbox_client()
               pytrends = TrendReq(hl='ar', tz=0)
-              excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
+              excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة""افلام", "حلقه", "حلقة","ديزنى"]
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
