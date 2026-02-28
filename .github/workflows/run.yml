@@ -28,7 +28,7 @@ jobs:
       - name: Create and Run Script
         shell: python
         env:
-          # هام: يجب إضافة المفتاح في GitHub Secrets باسم GDRIVE_JSON
+          # هذا السطر يسحب المفتاح الصافي من Secrets
           GDRIVE_JSON: ${{ secrets.GDRIVE_JSON }}
         run: |
           import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
@@ -45,15 +45,13 @@ jobs:
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              # قراءة البيانات من البيئة المحيطة (GitHub Secrets)
-              json_data = os.environ.get('GDRIVE_JSON')
-              if not json_data:
-                  raise Exception("GDRIVE_JSON secret is missing!")
-                  
-              info = json.loads(json_data)
+              # جلب الـ JSON من البيئة وإصلاح التنسيق فوراً
+              json_raw = os.environ.get('GDRIVE_JSON')
+              if not json_raw:
+                  raise Exception("خطأ: لم يتم العثور على GDRIVE_JSON في Secrets")
               
-              # الإصلاح الجوهري لخطأ Invalid JWT Signature:
-              # استبدال سلاسل النص '\\n' بأسطر حقيقية '\n' ليعمل التشفير
+              info = json.loads(json_raw)
+              # هذا السطر هو الحل النهائي لمشكلة Signature
               if 'private_key' in info:
                   info['private_key'] = info['private_key'].replace('\\n', '\n')
               
@@ -137,7 +135,7 @@ jobs:
                   file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
                   media = MediaFileUpload(final_p, mimetype='video/mp4')
                   file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                  log(f"✅ تم بنجاح! ID: {file.get('id')}")
+                  log(f"✅ تم الرفع بنجاح! ID: {file.get('id')}")
                   
               except Exception as e:
                   log(f"❌ فشل: {e}")
@@ -147,7 +145,7 @@ jobs:
 
           async def main():
               start_time = time.time()
-              log("🚀 الجلسة تعمل")
+              log("🚀 الجلسة بدأت...")
               try:
                   drive_service = get_drive_service()
               except Exception as e:
@@ -182,8 +180,8 @@ jobs:
                   
                       await asyncio.sleep(60)
                   except Exception as e:
-                      log(f"⚠️ خطأ: {e}")
-                      await asyncio.sleep(20)
+                      log(f"⚠️ تنبيه: {e}")
+                      await asyncio.sleep(30)
 
           asyncio.run(main())
 
