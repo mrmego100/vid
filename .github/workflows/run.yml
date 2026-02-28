@@ -28,7 +28,7 @@ jobs:
       - name: Create and Run Script
         shell: python
         env:
-          # تم تغيير هذا السطر ليقرأ المفتاح من إعدادات الأمان في جيت هاب
+          # هام: يجب إضافة المفتاح في GitHub Secrets باسم GDRIVE_JSON
           GDRIVE_JSON: ${{ secrets.GDRIVE_JSON }}
         run: |
           import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
@@ -45,9 +45,18 @@ jobs:
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              info = json.loads(os.environ.get('GDRIVE_JSON'))
-              # السطر التالي يعالج مشكلة الـ JWT Signature والأسطر الجديدة
-              info['private_key'] = info['private_key'].replace('\\n', '\n')
+              # قراءة البيانات من البيئة المحيطة (GitHub Secrets)
+              json_data = os.environ.get('GDRIVE_JSON')
+              if not json_data:
+                  raise Exception("GDRIVE_JSON secret is missing!")
+                  
+              info = json.loads(json_data)
+              
+              # الإصلاح الجوهري لخطأ Invalid JWT Signature:
+              # استبدال سلاسل النص '\\n' بأسطر حقيقية '\n' ليعمل التشفير
+              if 'private_key' in info:
+                  info['private_key'] = info['private_key'].replace('\\n', '\n')
+              
               creds = service_account.Credentials.from_service_account_info(info)
               return build('drive', 'v3', credentials=creds)
 
@@ -138,7 +147,7 @@ jobs:
 
           async def main():
               start_time = time.time()
-              log("🚀 الجلسة تعمل بأقصى سرعة")
+              log("🚀 الجلسة تعمل")
               try:
                   drive_service = get_drive_service()
               except Exception as e:
@@ -165,16 +174,16 @@ jobs:
                               and not any(word in w for word in excluded_words)
                           ]
                           
-                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد مطابق.")
+                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد.")
                           for q in new_titles:
                               await create_video(q, int(time.time()), drive_service)
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                               if (time.time() - start_time) >= SESSION_LIMIT: break
                   
-                      await asyncio.sleep(30)
+                      await asyncio.sleep(60)
                   except Exception as e:
                       log(f"⚠️ خطأ: {e}")
-                      await asyncio.sleep(10)
+                      await asyncio.sleep(20)
 
           asyncio.run(main())
 
