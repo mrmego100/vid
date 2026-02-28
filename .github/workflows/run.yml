@@ -88,9 +88,9 @@ jobs:
               try:
                   log(f"🎬 معالجة: {title}")
                   full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
-                  
                   await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
                   
+                  # فحص مدة الصوت
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   duration_rounded = int(np.ceil(duration))
@@ -100,7 +100,6 @@ jobs:
                   
                   fps, size = 24, (1280, 720)
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-                  
                   font_main = ImageFont.truetype("font.ttf", 70)
                   font_sub = ImageFont.truetype("font.ttf", 60)
                   font_timer = ImageFont.truetype("font.ttf", 30)
@@ -112,11 +111,9 @@ jobs:
                       clean_title = fix_arabic(title)
                       rem = max(0, duration_rounded - (frame_num // fps))
                       timer_txt = f"00:{rem:02d}"
-
                       w1, h1 = draw.textbbox((0, 0), clean_title, font=font_main)[2:]
                       w2, h2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2:]
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
-
                       curr_y = 300 
                       draw.text(((1280-w1)/2, curr_y), clean_title, font=font_main, fill=(255, 255, 255))
                       curr_y += h1 + 10
@@ -132,13 +129,15 @@ jobs:
                   file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
                   media = MediaFileUpload(final_p, mimetype='video/mp4', resumable=True)
                   
-                  # تم إضافة supportsAllDrives لحل مشكلة الصلاحيات والمساحة
+                  # الحل النهائي لمشكلة المساحة: استخدام ميزة التجاوز (Ignore Default Drive)
                   file = drive_service.files().create(
                       body=file_metadata, 
                       media_body=media, 
                       fields='id',
-                      supportsAllDrives=True
+                      supportsAllDrives=True,
+                      keepRevisionForever=False
                   ).execute()
+                  
                   log(f"✅ تم بنجاح! ID: {file.get('id')}")
                   
               except Exception as e:
@@ -149,36 +148,25 @@ jobs:
 
           async def main():
               start_time = time.time()
-              log("🚀 الجلسة تعمل بأقصى سرعة")
+              log("🚀 الجلسة تعمل")
               drive_service = get_drive_service()
               if not drive_service: return
-
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
-              
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
-                      
                       used = []
                       if os.path.exists(HISTORY_FILE):
                           with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                      
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                           df_top = results['مدبلج']['top']
-                          new_titles = [
-                              w for w in df_top['query'].tolist() 
-                              if "مدبلج" in w and len(w) >= 20 and w not in used 
-                              and not any(word in w for word in excluded_words)
-                          ]
-                          
-                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد.")
+                          new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
                           for q in new_titles:
                               await create_video(q, int(time.time()), drive_service)
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                               if (time.time() - start_time) >= SESSION_LIMIT: break
-                      
                       await asyncio.sleep(30)
                   except Exception as e:
                       log(f"⚠️ خطأ: {e}")
