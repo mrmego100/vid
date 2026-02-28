@@ -41,18 +41,14 @@ jobs:
 
           nest_asyncio.apply()
 
-          # --- إعدادات جوجل درايف ---
+          # حط الـ ID بتاع الـ Shared Drive هنا
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              try:
-                  info = json.loads(os.environ.get('GDRIVE_JSON'))
-                  info['private_key'] = info['private_key'].replace('\\n', '\n')
-                  creds = service_account.Credentials.from_service_account_info(info)
-                  return build('drive', 'v3', credentials=creds)
-              except Exception as e:
-                  print(f"❌ Error initializing Drive: {e}")
-                  return None
+              info = json.loads(os.environ.get('GDRIVE_JSON'))
+              info['private_key'] = info['private_key'].replace('\\n', '\n')
+              creds = service_account.Credentials.from_service_account_info(info)
+              return build('drive', 'v3', credentials=creds)
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -72,12 +68,8 @@ jobs:
           POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو.  
           لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة.  
           أو قم بالدخول على الموقع المعروض أمامك باللون الأزرق.  
-          إلى هنا نكون قد وصلنا إلى نهاية الفيديو وأتمنى ان يكون الفيديو نال إعجابكم وأضاف لكم قيمة جديدة في يومكم الحالى.  
-          أود ان اعتذر لكم عن عدم قدرة عرض أى شئ خاص بمالك محتوى آخر هنا.  
-          نحن نتبع ونحترم جميع سياسات حقوق الملكية وإرشادات المنتدى الخاص بالمنصة.  
-          لذلك لا يمكن عرض أى شئ ليس من حقنا فى هذه القناة.  
           تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}.  
-          فقط قم بزيارة موقعنا المعروض. آراكم في فيديو آخر."""
+          آراكم في فيديو آخر."""
 
           def fix_arabic(text):
               reshaped_text = reshape(text)
@@ -90,7 +82,6 @@ jobs:
                   full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
                   await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
                   
-                  # فحص مدة الصوت
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   duration_rounded = int(np.ceil(duration))
@@ -129,15 +120,12 @@ jobs:
                   file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
                   media = MediaFileUpload(final_p, mimetype='video/mp4', resumable=True)
                   
-                  # الحل النهائي لمشكلة المساحة: استخدام ميزة التجاوز (Ignore Default Drive)
                   file = drive_service.files().create(
                       body=file_metadata, 
                       media_body=media, 
                       fields='id',
-                      supportsAllDrives=True,
-                      keepRevisionForever=False
+                      supportsAllDrives=True
                   ).execute()
-                  
                   log(f"✅ تم بنجاح! ID: {file.get('id')}")
                   
               except Exception as e:
@@ -150,7 +138,6 @@ jobs:
               start_time = time.time()
               log("🚀 الجلسة تعمل")
               drive_service = get_drive_service()
-              if not drive_service: return
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
               while (time.time() - start_time) < SESSION_LIMIT:
