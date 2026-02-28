@@ -45,10 +45,14 @@ jobs:
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              info = json.loads(os.environ.get('GDRIVE_JSON'))
-              info['private_key'] = info['private_key'].replace('\\n', '\n')
-              creds = service_account.Credentials.from_service_account_info(info)
-              return build('drive', 'v3', credentials=creds)
+              try:
+                  info = json.loads(os.environ.get('GDRIVE_JSON'))
+                  info['private_key'] = info['private_key'].replace('\\n', '\n')
+                  creds = service_account.Credentials.from_service_account_info(info)
+                  return build('drive', 'v3', credentials=creds)
+              except Exception as e:
+                  print(f"❌ Error initializing Drive: {e}")
+                  return None
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -126,8 +130,15 @@ jobs:
                   
                   log(f"📤 جاري رفع {title}...")
                   file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
-                  media = MediaFileUpload(final_p, mimetype='video/mp4')
-                  file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                  media = MediaFileUpload(final_p, mimetype='video/mp4', resumable=True)
+                  
+                  # تم إضافة supportsAllDrives لحل مشكلة الصلاحيات والمساحة
+                  file = drive_service.files().create(
+                      body=file_metadata, 
+                      media_body=media, 
+                      fields='id',
+                      supportsAllDrives=True
+                  ).execute()
                   log(f"✅ تم بنجاح! ID: {file.get('id')}")
                   
               except Exception as e:
@@ -139,11 +150,8 @@ jobs:
           async def main():
               start_time = time.time()
               log("🚀 الجلسة تعمل بأقصى سرعة")
-              try:
-                  drive_service = get_drive_service()
-              except Exception as e:
-                  log(f"❌ عطل في جوجل درايف: {e}")
-                  return
+              drive_service = get_drive_service()
+              if not drive_service: return
 
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
@@ -165,7 +173,7 @@ jobs:
                               and not any(word in w for word in excluded_words)
                           ]
                           
-                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد مطابق.")
+                          log(f"🔍 وجدنا {len(new_titles)} فيديو جديد.")
                           for q in new_titles:
                               await create_video(q, int(time.time()), drive_service)
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
