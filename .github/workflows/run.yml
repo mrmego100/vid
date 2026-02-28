@@ -42,19 +42,45 @@ jobs:
 
           nest_asyncio.apply()
 
-          # --- المفتاح مدمج مباشرة لمنع أخطاء التنسيق ---
+          # --- معالجة المفتاح السري يدوياً لضمان سلامة التوقيع ---
+          RAW_PK = """-----BEGIN PRIVATE KEY-----
+          MIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCuV5TfZGd1fxZz
+          I5J+4FAi/99zkvvWo0aImGQP8waiT5JTEv3nhr2yIKG9g55WM3dZHsQIv4RzAfYX
+          KiZ7RV4qQ6VLzz2KbCQ10TUB/3zGhov+GV0VZoKTedkJyPHdoylfoLRNjwRM6sGL
+          W6Y3J2VyzI0I3DeruemCuURwVMNwpSv/5eLe8O+1vvDYDYMwf+5yS6rcJR7VShnC
+          g14GQCoYmLUrGrVAr5b50uywtBcRqh/T7df8+j+apy6fueOE+wJs9qFmzrNs3gnH
+          6geO5sjXrUwI1or2vfUDndu5nKeijYbxWODcbCZzRdjJ7cqHnzy7jJ269j6XmIpj
+          1j5zTRh5AgMBAAECgf9C6Nn54k7SiTPUfJJ8nxoiVJEtifudJIytX88HT/37zQ4b
+          U+6eLNggxOVOFnVuH9JuIaCauuXaPaZ0vXiHVtgM4GlP7vlvZpF/FguB+MuqZXjU
+          zGctD2qNrvXdC4HHzhbS3JpWKc08t9wP39yqzjPhGyAFhn7XKUK1KOVbNyzKzfck
+          K4XeRnMrtCLc/YVMQCvzbf4gIqKjOBuLGSKZBCDBsb+ER4uYGPkD4SZa9HAhm/DT
+          nycgoaJ+exoAiYrAForVuraL5dLHT6WTIvBJho5pGz6xybCc0KgQx9n0qgB7mws61
+          XRbcfohnpSbYkhgBaUju2pQrCx47PVafoF1OoHUCgYEA12oww4+LqBjMGC4X7y6H
+          eo39nXGO/9xNwGMxtd6gt55LLtWBlTRNwzVnwr92htD8v1V5ZbOSK5ECH+Sv3Zg/
+          ODit2aChL7IKKPCrdEwgg4HsuCPIB7OS87/9on3WnK7ZAvA2vM7iEOH3fOd8D7vQ
+          mu+1Dnsy2bmsj46h7Wd1ir0CgYEAzzBjRP3YZl6qZIpczTs87dRoQWJvqQJ8CTey
+          5tSAPk54gTmEHmxqxctRVFKtfcn/6sGamDVeOb5Yh3mLdtubRSRLNM+1N22veWjS
+          0X4nXvWRzn/W4gmraI1JwlfPt9QYSXVJwHQ+JXbJU3CFbbuCUCApmurDTLNM20VW
+          OHdYfm0CgYBOZkuRITFG4J+HPV9goaKVLBBduPK+lEOH/ZIeCwSbT3U1emdLEloq
+          7cjxzBUrQ+x5BnbEWPKeAIyxZt3K3JpFr/s19Yw0e6vO8qi0DvDWa/bnnb4zb1vQ
+          ctOwy/PL2qcItrx1QyZr1pHoV6eDYmutuAhBWP1M2JLBPLwaV0kkUQKBgQDId8Yl
+          NAQVENWHUET4oq+SYqm5Ufg+LFQ9SvJD3Cp1ntGEH1WRZk9tMAtyLkkFY9TFnSvq
+          yABymJTqCBWEHHpAzRwjbjGl/vAA5gbNgmWvwKWiixksPjTmhYZvjy1BbetN8Dk7
+          CH41G5kyrbW8dehhhK0c4rey1+2uX4lMO1WZhQKBgEQjgiiBRqjcWZAYuZgeSewe
+          IhrFlPCnn5w0QwCpz/25d60YACoVJxZxHDApZmzHxijGgTqZfNS+Za9kgxItz2AV
+          KINr6CG9ZtHJbTYkwTE+MIV6L+FdTLT3sPOD/LJWsnsgWYXtZl8HjJPVwpKQIVSi
+          LYQ7rPUgPwi7oRRl1Rfl
+          -----END PRIVATE KEY-----"""
+
+          # تنظيف المسافات الناتجة عن الـ indentation في YAML
+          CLEAN_PK = "\n".join([line.strip() for line in RAW_PK.strip().split("\n")])
+
           KEY_DATA = {
             "type": "service_account",
             "project_id": "seventh-terrain-488723-c0",
-            "private_key_id": "65598b4f87ac78ddbb974719c2a75cb3897eff18",
-            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQCuV5TfZGd1fxZz\nI5J+4FAi/99zkvvWo0aImGQP8waiT5JTEv3nhr2yIKG9g55WM3dZHsQIv4RzAfYX\nKiZ7RV4qQ6VLzz2KbCQ10TUB/3zGhov+GV0VZoKTedkJyPHdoylfoLRNjwRM6sGL\nW6Y3J2VyzI0I3DeruemCuURwVMNwpSv/5eLe8O+1vvDYDYMwf+5yS6rcJR7VShnC\ng14GQCoYmLUrGrVAr5b50uywtBcRqh/T7df8+j+apy6fueOE+wJs9qFmzrNs3gnH\n6geO5sjXrUwI1or2vfUDndu5nKeijYbxWODcbCZzRdjJ7cqHnzy7jJ269j6XmIpj\n1j5zTRh5AgMBAAECgf9C6Nn54k7SiTPUfJJ8nxoiVJEtifudJIytX88HT/37zQ4b\nU+6eLNggxOVOFnVuH9JuIaCauuXaPaZ0vXiHVtgM4GlP7vlvZpF/FguB+MuqZXjU\nzGctD2qNrvXdC4HHzhbS3JpWKc08t9wP39yqzjPhGyAFhn7XKUK1KOVbNyzKzfck\nK4XeRnMrtCLc/YVMQCvzbf4gIqKjOBuLGSKZBCDBsb+ER4uYGPkD4SZa9HAhm/DT\nycgoaJ+exoAiYrAForVuraL5dLHT6WTIvBJho5pGz6xybCc0KgQx9n0qgB7mws61\nXRbcfohnpSbYkhgBaUju2pQrCx47PVafoF1OoHUCgYEA12oww4+LqBjMGC4X7y6H\neo39nXGO/9xNwGMxtd6gt55LLtWBlTRNwzVnwr92htD8v1V5ZbOSK5ECH+Sv3Zg/\nODit2aChL7IKKPCrdEwgg4HsuCPIB7OS87/9on3WnK7ZAvA2vM7iEOH3fOd8D7vQ\nmu+1Dnsy2bmsj46h7Wd1ir0CgYEAzzBjRP3YZl6qZIpczTs87dRoQWJvqQJ8CTey\n5tSAPk54gTmEHmxqxctRVFKtfcn/6sGamDVeOb5Yh3mLdtubRSRLNM+1N22veWjS\n0X4nXvWRzn/W4gmraI1JwlfPt9QYSXVJwHQ+JXbJU3CFbbuCUCApmurDTLNM20VW\nOHdYfm0CgYBOZkuRITFG4J+HPV9goaKVLBBduPK+lEOH/ZIeCwSbT3U1emdLEloq\n7cjxzBUrQ+x5BnbEWPKeAIyxZt3K3JpFr/s19Yw0e6vO8qi0DvDWa/bnnb4zb1vQ\nctOwy/PL2qcItrx1QyZr1pHoV6eDYmutuAhBWP1M2JLBPLwaV0kkUQKBgQDId8Yl\nNAQVENWHUET4oq+SYqm5Ufg+LFQ9SvJD3Cp1ntGEH1WRZk9tMAtyLkkFY9TFnSvq\nyABymJTqCBWEHHpAzRwjbjGl/vAA5gbNgmWvwKWiixksPjTmhYZvjy1BbetN8Dk7\nCH41G5kyrbW8dehhhK0c4rey1+2uX4lMO1WZhQKBgEQjgiiBRqjcWZAYuZgeSewe\nIhrFlPCnn5w0QwCpz/25d60YACoVJxZxHDApZmzHxijGgTqZfNS+Za9kgxItz2AV\nKINr6CG9ZtHJbTYkwTE+MIV6L+FdTLT3sPOD/LJWsnsgWYXtZl8HjJPVwpKQIVSi\nLYQ7rPUgPwi7oRRl1Rfl\n-----END PRIVATE KEY-----\n",
+            "private_key": CLEAN_PK,
             "client_email": "rew-181@seventh-terrain-488723-c0.iam.gserviceaccount.com",
-            "client_id": "105736407546717657230",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/rew-181%40seventh-terrain-488723-c0.iam.gserviceaccount.com",
-            "universe_domain": "googleapis.com"
           }
 
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
@@ -62,7 +88,8 @@ jobs:
           def get_drive_service():
               try:
                   creds = service_account.Credentials.from_service_account_info(KEY_DATA)
-                  return build('drive', 'v3', credentials=creds)
+                  scoped_creds = creds.with_scopes(['https://www.googleapis.com/auth/drive.file'])
+                  return build('drive', 'v3', credentials=scoped_creds)
               except Exception as e:
                   print(f"❌ AUTH ERROR: {e}")
                   raise
@@ -78,11 +105,8 @@ jobs:
           SESSION_LIMIT = 170 * 60 
 
           now = datetime.datetime.now()
-          current_time_str = now.strftime("%I:%M %p")
-          current_date_str = now.strftime("%Y-%m-%d")
-
-          PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
-          POST_TEXT = f" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو. لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة. أو قم بالدخول على الموقع المعروض أمامك باللون الأزرق. تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}. آراكم في فيديو آخر."
+          PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم هو"
+          POST_TEXT = f" . لمشاهدة المسلسل كامل ومدبلج، تفضل بزيارة موقعنا المعروض أمامك باللون الأصفر. تسجيلنا اليوم بتاريخ {now.strftime('%Y-%m-%d')}. نأمل أن ينال الفيديو إعجابكم."
 
           async def create_video(title, index, drive_service):
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
@@ -90,23 +114,21 @@ jobs:
                   log(f"🎬 Processing: {title}")
                   await edge_tts.Communicate(f"{PRE_TEXT} {title} {POST_TEXT}", VOICE).save(audio_p)
                   
-                  # أمر ffprobe الصحيح
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
-                  duration_int = int(np.ceil(duration))
-
+                  
                   if not os.path.exists("font.ttf"):
                       with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
                   
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), 24, (1280, 720))
-                  f_main = ImageFont.truetype("font.ttf", 65)
+                  f_main = ImageFont.truetype("font.ttf", 60)
                   
                   for frame_num in range(int(duration * 24)):
                       img = np.zeros((720, 1280, 3), np.uint8)
                       pil_img = Image.fromarray(img)
                       draw = ImageDraw.Draw(pil_img)
                       txt = reshape(title)
-                      rem = max(0, duration_int - (frame_num // 24))
+                      rem = max(0, int(duration) - (frame_num // 24))
                       
                       w = draw.textbbox((0, 0), txt, font=f_main)[2]
                       draw.text(((1280-w)/2, 300), txt, font=f_main, fill=(255, 255, 255))
@@ -140,17 +162,10 @@ jobs:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
-                      used = []
-                      if os.path.exists(HISTORY_FILE):
-                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                      
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                          for q in results['مدبلج']['top']['query'].tolist():
-                              if "مدبلج" in q and len(q) > 15 and q not in used:
-                                  await create_video(q, int(time.time()), drive_service)
-                                  with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
-                                  if (time.time() - start_time) >= SESSION_LIMIT: break
-                      await asyncio.sleep(200)
+                          for q in results['مدبلج']['top']['query'].tolist()[:3]:
+                              await create_video(q, int(time.time()), drive_service)
+                      await asyncio.sleep(300)
                   except Exception as e:
                       log(f"⚠️ Trend Error: {e}")
                       await asyncio.sleep(60)
