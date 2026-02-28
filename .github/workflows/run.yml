@@ -68,11 +68,14 @@ jobs:
                   if not b64_str:
                       raise Exception("GDRIVE_JSON secret is empty!")
                   
+                  # فك التشفير
                   decoded_bytes = base64.b64decode(b64_str)
                   info = json.loads(decoded_bytes)
                   
+                  # ملاحظة: إذا كان المفتاح يحتوي على أسطر حقيقية بالفعل (وهو المفروض)، 
+                  # فلا نحتاج لعمل replace. سنكتفي بـ strip() فقط لإزالة أي مسافات زائدة.
                   if 'private_key' in info:
-                      info['private_key'] = info['private_key'].replace('\\n', '\n')
+                      info['private_key'] = info['private_key'].strip()
                   
                   creds = service_account.Credentials.from_service_account_info(info)
                   return build('drive', 'v3', credentials=creds)
