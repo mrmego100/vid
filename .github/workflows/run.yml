@@ -24,16 +24,16 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install edge-tts arabic-reshaper pytrends opencv-python pillow numpy requests nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install edge-tts arabic-reshaper pytrends opencv-python pillow numpy requests nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib base64
 
       - name: Create and Run Script
         shell: python
         env:
-          GDRIVE_JSON: ${{ secrets.GDRIVE_JSON }}
+          GDRIVE_JSON_B64: ${{ secrets.GDRIVE_JSON }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json, base64
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from pytrends.request import TrendReq
@@ -43,6 +43,7 @@ jobs:
 
           nest_asyncio.apply()
 
+          # --- حذف الجلسات القديمة لتنظيف الحساب ---
           def delete_old_runs():
               try:
                   token = os.environ.get('GH_TOKEN')
@@ -51,25 +52,30 @@ jobs:
                   headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github.v3+json'}
                   res = requests.get(url, headers=headers)
                   if res.status_code == 200:
-                      runs = res.json().get('workflow_runs', [])
-                      for run in runs[10:]:
+                      for run in res.json().get('workflow_runs', [])[10:]:
                           requests.delete(f"{url}/{run['id']}", headers=headers)
-                  print("✅ تم تنظيف الجلسات القديمة.")
+                  print("✅ تم تنظيف الجلسات.")
               except: pass
 
+          # --- إعدادات جوجل درايف باستخدام فك تشفير Base64 ---
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              # تنظيف البيانات من أي مسافات خارجية قد تسبب فشل التوقيع
-              raw_data = os.environ.get('GDRIVE_JSON').strip()
-              info = json.loads(raw_data)
-              
-              if 'private_key' in info:
-                  # معالجة شاملة للأسطر الجديدة والمسافات داخل المفتاح
-                  info['private_key'] = info['private_key'].replace('\\n', '\n').strip()
-              
-              creds = service_account.Credentials.from_service_account_info(info)
-              return build('drive', 'v3', credentials=creds)
+              try:
+                  b64_data = os.environ.get('GDRIVE_JSON_B64')
+                  # فك التشفير لضمان سلامة المفتاح 100%
+                  json_raw = base64.b64decode(b64_data).decode('utf-8')
+                  info = json.loads(json_raw)
+                  
+                  # التأكد من معالجة الأسطر الجديدة داخل المفتاح
+                  if 'private_key' in info:
+                      info['private_key'] = info['private_key'].replace('\\n', '\n')
+                  
+                  creds = service_account.Credentials.from_service_account_info(info)
+                  return build('drive', 'v3', credentials=creds)
+              except Exception as e:
+                  print(f"❌ خطأ قاتل في التوثيق: {e}")
+                  raise
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -100,8 +106,7 @@ jobs:
               return reshape(text)
 
           async def create_video(title, index, drive_service):
-              audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
-              video_p = f"v_{index}.mp4"
+              audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
                   full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
@@ -144,10 +149,10 @@ jobs:
                   file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
                   media = MediaFileUpload(final_p, mimetype='video/mp4')
                   file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                  log(f"✅ تم بنجاح! ID: {file.get('id')}")
+                  log(f"✅ تم الرفع! ID: {file.get('id')}")
                   
               except Exception as e:
-                  log(f"❌ فشل: {e}")
+                  log(f"❌ فشل المعالجة: {e}")
               finally:
                   for f in [audio_p, video_p, final_p]: 
                       if os.path.exists(f): os.remove(f)
@@ -155,12 +160,10 @@ jobs:
           async def main():
               delete_old_runs()
               start_time = time.time()
-              log("🚀 الجلسة تعمل")
+              log("🚀 الجلسة بدأت بكامل طاقتها")
               try:
                   drive_service = get_drive_service()
-              except Exception as e:
-                  log(f"❌ عطل توثيق جوجل: {e}")
-                  return
+              except: return
 
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
