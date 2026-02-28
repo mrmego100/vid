@@ -23,32 +23,35 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio dropbox
 
       - name: Create and Run Script
         shell: python
         env:
-          GDRIVE_JSON: ${{ secrets.GDRIVE_JSON }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
           from pytrends.request import TrendReq
-          from googleapiclient.discovery import build
-          from googleapiclient.http import MediaFileUpload
-          from google.oauth2 import service_account
+          import dropbox
 
           nest_asyncio.apply()
 
-          # حط الـ ID بتاع الـ Shared Drive هنا
-          FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
-          
-          def get_drive_service():
-              info = json.loads(os.environ.get('GDRIVE_JSON'))
-              info['private_key'] = info['private_key'].replace('\\n', '\n')
-              creds = service_account.Credentials.from_service_account_info( info, scopes=["https://www.googleapis.com/auth/drive"] )
-              return build('drive', 'v3', credentials=creds)
+          # مسار المجلد في دروب بوكس (تأكد من وجود علامة / في البداية)
+          # إذا أردت الرفع في الصفحة الرئيسية مباشرة اجعله ""
+          DROPBOX_FOLDER_PATH = "/Videos" 
+
+          def get_dropbox_client():
+              # استخدام Refresh Token لضمان عدم انتهاء الجلسة كل 4 ساعات
+              return dropbox.Dropbox(
+                  oauth2_refresh_token=os.environ.get('DROPBOX_REFRESH_TOKEN'),
+                  app_key=os.environ.get('DROPBOX_APP_KEY'),
+                  app_secret=os.environ.get('DROPBOX_APP_SECRET')
+              )
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -75,7 +78,7 @@ jobs:
               reshaped_text = reshape(text)
               return get_display(reshaped_text)
 
-          async def create_video(title, index, drive_service):
+          async def create_video(title, index, dbx_client):
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
@@ -116,17 +119,17 @@ jobs:
 
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
                   
-                  log(f"📤 جاري رفع {title}...")
-                  file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
-                  media = MediaFileUpload(final_p, mimetype='video/mp4', resumable=True)
+                  log(f"📤 جاري رفع {title} إلى Dropbox...")
+                  file_path = f"{DROPBOX_FOLDER_PATH}/{title}.mp4".replace("//", "/")
                   
-                  file = drive_service.files().create(
-                      body=file_metadata, 
-                      media_body=media, 
-                      fields='id',
-                      supportsAllDrives=True
-                  ).execute()
-                  log(f"✅ تم بنجاح! ID: {file.get('id')}")
+                  with open(final_p, "rb") as f:
+                      dbx_client.files_upload(
+                          f.read(), 
+                          file_path, 
+                          mode=dropbox.files.WriteMode.overwrite
+                      )
+                  
+                  log(f"✅ تم الرفع بنجاح! المسار: {file_path}")
                   
               except Exception as e:
                   log(f"❌ فشل: {e}")
@@ -137,7 +140,7 @@ jobs:
           async def main():
               start_time = time.time()
               log("🚀 الجلسة تعمل")
-              drive_service = get_drive_service()
+              dbx_client = get_dropbox_client()
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
               while (time.time() - start_time) < SESSION_LIMIT:
@@ -151,7 +154,7 @@ jobs:
                           df_top = results['مدبلج']['top']
                           new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
                           for q in new_titles:
-                              await create_video(q, int(time.time()), drive_service)
+                              await create_video(q, int(time.time()), dbx_client)
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                               if (time.time() - start_time) >= SESSION_LIMIT: break
                       await asyncio.sleep(30)
@@ -159,7 +162,11 @@ jobs:
                       log(f"⚠️ خطأ: {e}")
                       await asyncio.sleep(10)
 
-          asyncio.run(main())
+          async def run_async():
+              await main()
+              
+          if __name__ == "__main__":
+              asyncio.run(run_async())
 
       - name: Save Progress
         if: always()
