@@ -2,8 +2,8 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 */3 * * *" # يعمل كل 3 ساعات
-  workflow_dispatch: # للتشغيل اليدوي
+    - cron: "0 */3 * * *" 
+  workflow_dispatch:      
 
 jobs:
   build:
@@ -28,6 +28,7 @@ jobs:
       - name: Create and Run Script
         shell: python
         env:
+          # هذا هو السر الذي يجب أن تضعه في إعدادات ريبو جيت هاب
           GDRIVE_JSON: ${{ secrets.GDRIVE_JSON }}
         run: |
           import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
@@ -42,53 +43,54 @@ jobs:
           nest_asyncio.apply()
 
           # --- إعدادات جوجل درايف ---
-          # تم وضع الـ ID الخاص بك هنا مباشرة
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
               try:
-                  info = json.loads(os.environ.get('GDRIVE_JSON'))
-                  # معالجة مفتاح الخصوصية لضمان عمل الـ JWT
-                  info['private_key'] = info['private_key'].replace('\\n', '\n')
+                  json_data = os.environ.get('GDRIVE_JSON')
+                  if not json_data:
+                      print("❌ Error: GDRIVE_JSON secret is missing!")
+                      return None
+                  
+                  info = json.loads(json_data)
+                  # إصلاح مشكلة المفتاح الخاص لضمان قبول التوقيع الرقمي
+                  if 'private_key' in info:
+                      info['private_key'] = info['private_key'].replace('\\n', '\n')
+                  
                   creds = service_account.Credentials.from_service_account_info(
                       info, scopes=['https://www.googleapis.com/auth/drive.file']
                   )
                   return build('drive', 'v3', credentials=creds)
               except Exception as e:
-                  print(f"Error initializing Drive Service: {e}")
+                  print(f"❌ Drive Auth Error: {e}")
                   return None
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
               sys.stdout.flush()
 
+          def fix_arabic(text):
+              reshaped = reshape(text)
+              return get_display(reshaped)
+
           VOICE = "ar-SA-ZariyahNeural"
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
-          SESSION_LIMIT = 170 * 60 # مدة الجلسة (أقل من 3 ساعات بقليل)
-          
-          now = datetime.datetime.now()
-          current_time_str = now.strftime("%I:%M %p")
-          current_date_str = now.strftime("%Y-%m-%d")
-
-          PRE_TEXT = "أهلاً بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
-          POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج، فابقَ معنا حتى نهاية الفيديو، لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة، أو قم بالدخول على الموقع المعروض أمامك باللون الأزرق. إلى هنا نكون قد وصلنا إلى نهاية الفيديو وأتمنى أن يكون قد نال إعجابكم. نعتذر عن عدم عرض محتوى محمي بحقوق الملكية التزاماً بسياسات المنصة. تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}. آراكم في فيديو آخر."""
-
-          def fix_arabic(text):
-              reshaped_text = reshape(text)
-              return get_display(reshaped_text)
+          SESSION_LIMIT = 170 * 60 
 
           async def create_video(title, index, drive_service):
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
-                  full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
+                  now = datetime.datetime.now()
+                  current_time_str = now.strftime("%I:%M %p")
+                  current_date_str = now.strftime("%Y-%m-%d")
+
+                  full_speech = f"أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو {title}. إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابق معنا حتى نهاية الفيديو. لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة. أو قم بالدخول على الموقع المعروض أمامك. تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}. آراكم في فيديو آخر."
                   
-                  # توليد الصوت
                   await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
                   
-                  # حساب المدة
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   duration_rounded = int(np.ceil(duration))
@@ -98,10 +100,9 @@ jobs:
                   
                   fps, size = 24, (1280, 720)
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-                  
                   font_main = ImageFont.truetype("font.ttf", 60)
                   font_sub = ImageFont.truetype("font.ttf", 50)
-                  font_timer = ImageFont.truetype("font.ttf", 30)
+                  font_timer = ImageFont.truetype("font.ttf", 35)
 
                   for frame_num in range(int(duration * fps)):
                       img = np.zeros((720, 1280, 3), np.uint8)
@@ -112,78 +113,56 @@ jobs:
                       rem = max(0, duration_rounded - (frame_num // fps))
                       timer_txt = f"00:{rem:02d}"
 
-                      # حساب الإحداثيات لوضع النص في المنتصف
                       w1 = draw.textbbox((0, 0), clean_title, font=font_main)[2]
                       w2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2]
                       w3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2]
 
-                      draw.text(((1280-w1)/2, 250), clean_title, font=font_main, fill=(255, 255, 255))
-                      draw.text(((1280-w2)/2, 400), URL_TEXT, font=font_sub, fill=(255, 237, 0))
-                      draw.text(((1280-w3)/2, 500), timer_txt, font=font_timer, fill=(0, 255, 0))
-                      
+                      draw.text(((1280-w1)/2, 280), clean_title, font=font_main, fill=(255, 255, 255))
+                      draw.text(((1280-w2)/2, 420), URL_TEXT, font=font_sub, fill=(255, 237, 0))
+                      draw.text(((1280-w3)/2, 520), timer_txt, font=font_timer, fill=(0, 255, 0))
                       out.write(cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR))
                   out.release()
 
-                  # دمج الصوت والصورة
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
                   
-                  # الرفع إلى جوجل درايف (بدون API Key، باستخدام حساب الخدمة)
                   if drive_service:
-                      log(f"📤 جاري رفع {title} إلى المجلد المحدد...")
-                      file_metadata = {
-                          'name': f"{title}.mp4",
-                          'parents': [FOLDER_ID]
-                      }
+                      log(f"📤 جاري الرفع إلى درايف...")
+                      file_metadata = {'name': f"{title}.mp4", 'parents': [FOLDER_ID]}
                       media = MediaFileUpload(final_p, mimetype='video/mp4', resumable=True)
                       file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                      log(f"✅ تم الرفع بنجاح! ID الملف: {file.get('id')}")
+                      log(f"✅ تم الرفع! ID: {file.get('id')}")
                   
               except Exception as e:
-                  log(f"❌ فشل في معالجة {title}: {e}")
+                  log(f"❌ خطأ: {e}")
               finally:
-                  # تنظيف الملفات المؤقتة
                   for f in [audio_p, video_p, final_p]: 
                       if os.path.exists(f): os.remove(f)
 
           async def main():
               start_time = time.time()
-              log("🚀 بدء جلسة العمل...")
-              
+              log("🚀 الجلسة بدأت")
               drive_service = get_drive_service()
-              if not drive_service:
-                  log("❌ فشل الاتصال بجوجل درايف. تأكد من إعداد الـ Secret.")
-                  return
+              if not drive_service: return
 
               pytrends = TrendReq(hl='ar', tz=0)
-              excluded_words = ["صيني", "تركي", "هندي", "الحلقة"]
-              
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
                       results = pytrends.related_queries()
-                      
                       used = []
                       if os.path.exists(HISTORY_FILE):
                           with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
                       
                       if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                          df_top = results['مدبلج']['top']
-                          new_titles = [
-                              w for w in df_top['query'].tolist() 
-                              if "مدبلج" in w and len(w) >= 15 and w not in used 
-                              and not any(word in w for word in excluded_words)
-                          ]
-                          
-                          log(f"🔍 وجدنا {len(new_titles)} موضوع جديد.")
+                          new_titles = [w for w in results['مدبلج']['top']['query'].tolist() if "مدبلج" in w and len(w) >= 15 and w not in used]
                           for q in new_titles:
                               await create_video(q, int(time.time()), drive_service)
                               with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                               if (time.time() - start_time) >= SESSION_LIMIT: break
-                      
-                      await asyncio.sleep(60) # انتظار دقيقة قبل الفحص التالي
+                      await asyncio.sleep(60)
                   except Exception as e:
-                      log(f"⚠️ خطأ في الحصول على التريند: {e}")
-                      await asyncio.sleep(30)
+                      log(f"⚠️ تنبيه: {e}")
+                      await asyncio.sleep(20)
 
           asyncio.run(main())
 
