@@ -43,7 +43,6 @@ jobs:
 
           nest_asyncio.apply()
 
-          # --- تنظيف جلسات GitHub ---
           def delete_old_runs():
               try:
                   token = os.environ.get('GH_TOKEN')
@@ -52,18 +51,23 @@ jobs:
                   headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github.v3+json'}
                   res = requests.get(url, headers=headers)
                   if res.status_code == 200:
-                      for run in res.json().get('workflow_runs', [])[10:]: # اترك آخر 10 جلسات فقط
+                      runs = res.json().get('workflow_runs', [])
+                      for run in runs[10:]:
                           requests.delete(f"{url}/{run['id']}", headers=headers)
+                  print("✅ تم تنظيف الجلسات القديمة.")
               except: pass
 
-          # --- إعدادات جوجل درايف ---
           FOLDER_ID = "13AzIYPxo1ppcdM3-CBNe-o8C6h1ruo4S" 
           
           def get_drive_service():
-              info = json.loads(os.environ.get('GDRIVE_JSON').strip())
-              # الإصلاح القاتل لمشكلة التوقيع الرقمي
+              # تنظيف البيانات من أي مسافات خارجية قد تسبب فشل التوقيع
+              raw_data = os.environ.get('GDRIVE_JSON').strip()
+              info = json.loads(raw_data)
+              
               if 'private_key' in info:
-                  info['private_key'] = info['private_key'].replace('\\n', '\n')
+                  # معالجة شاملة للأسطر الجديدة والمسافات داخل المفتاح
+                  info['private_key'] = info['private_key'].replace('\\n', '\n').strip()
+              
               creds = service_account.Credentials.from_service_account_info(info)
               return build('drive', 'v3', credentials=creds)
 
@@ -96,7 +100,8 @@ jobs:
               return reshape(text)
 
           async def create_video(title, index, drive_service):
-              audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
+              audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
+              video_p = f"v_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
                   full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
@@ -154,7 +159,7 @@ jobs:
               try:
                   drive_service = get_drive_service()
               except Exception as e:
-                  log(f"❌ عطل توثيق: {e}")
+                  log(f"❌ عطل توثيق جوجل: {e}")
                   return
 
               pytrends = TrendReq(hl='ar', tz=0)
