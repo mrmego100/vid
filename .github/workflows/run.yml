@@ -28,7 +28,8 @@ jobs:
       - name: Create and Run Script
         shell: python
         env:
-          GDRIVE_JSON: |
+          GDRIVE_JSON: ${{ secrets.GDRIVE_JSON }}
+        run: | 
             {
               "type": "service_account",
               "project_id": "seventh-terrain-488723-c0",
@@ -59,6 +60,8 @@ jobs:
           
           def get_drive_service():
               info = json.loads(os.environ.get('GDRIVE_JSON'))
+              # السطر التالي ضروري جداً لإصلاح مشكلة JWT Signature
+              info['private_key'] = info['private_key'].replace('\\n', '\n')
               creds = service_account.Credentials.from_service_account_info(info)
               return build('drive', 'v3', credentials=creds)
 
