@@ -61,7 +61,7 @@ jobs:
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
-          SESSION_LIMIT = 170 * 60 
+          SESSION_LIMIT = 60 * 60 
           
           now = datetime.datetime.now()
           current_time_str = now.strftime("%I:%M %p")
@@ -70,7 +70,7 @@ jobs:
           PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
           POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو.  
           لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة.  
-          أو قم بالدخول على الموقع المعروض أمامك باللون الأزرق.  
+          أو قم بالدخول على الموقع المعروض أمامك باللون الأصفر.  
           تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}.  
           آراكم في فيديو آخر."""
 
@@ -142,7 +142,7 @@ jobs:
               log("🚀 الجلسة تعمل")
               dbx_client = get_dropbox_client()
               pytrends = TrendReq(hl='ar', tz=0)
-              excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة""افلام", "حلقه", "حلقة","ديزنى"]
+              excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة",  "كوري", "الذئاب", "باكستاني", "افلام", "حلقه", "حلقة","ديزنى"]
               while (time.time() - start_time) < SESSION_LIMIT:
                   try:
                       pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
