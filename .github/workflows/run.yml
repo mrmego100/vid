@@ -2,30 +2,33 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 */3 * * *" # تشغيل احتياطي كل 3 ساعات في حال توقفت السلسلة
-  workflow_dispatch: # للتشغيل اليدوي
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [restart-session]
+
+concurrency:
+  group: video-generator-group
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write # ضرورية لحذف الجلسات وتشغيل جلسات جديدة
+      actions: write
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Cleanup Old Workflow Runs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "جاري حذف الجلسات القديمة والإبقاء على آخر جلستين..."
-          runs=$(gh run list --workflow "${{ github.workflow }}" --json databaseId --jq '.[2:].databaseId')
-          for run_id in $runs; do
-            gh run delete "$run_id"
-          done
-          echo "تم التنظيف بنجاح."
+      - name: 🧹 Delete Old Workflow Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 2
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -53,7 +56,6 @@ jobs:
 
           nest_asyncio.apply()
 
-          # مسار المجلد في دروب بوكس
           DROPBOX_FOLDER_PATH = "/Videos" 
 
           def get_dropbox_client():
@@ -71,7 +73,7 @@ jobs:
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
-          SESSION_LIMIT = 60 * 60 # الجلسة تنتهي بعد ساعة كما طلبت
+          SESSION_LIMIT = 60 * 60  # إنهاء الجلسة بعد 1 ساعة
           
           now = datetime.datetime.now()
           current_time_str = now.strftime("%I:%M %p")
@@ -187,10 +189,11 @@ jobs:
           git commit -m "Update history [skip ci]" || echo "No changes"
           git push || echo "Push failed"
 
-      - name: Trigger Next Session
+      - name: 🔄 Trigger Next Session
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "جاري بدء جلسة جديدة لضمان الاستمرارية 24 ساعة..."
-          gh workflow run "Continuous Video Generator"
+          curl -X POST \
+            -H "Authorization: token ${{ github.token }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type": "restart-session"}'
