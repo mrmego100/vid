@@ -67,7 +67,6 @@ jobs:
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
-          WAIT_TIME = 3600  # الانتظار 1 ساعة (بالثواني) بعد الانتهاء من العمليات
 
           now = datetime.datetime.now()
           current_time_str = now.strftime("%I:%M %p")
@@ -87,7 +86,7 @@ jobs:
           def upload_to_youtube(video_path, title):
               creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
               if not creds_json:
-                  log("❌ فشل الرفع: سر 'YOUTUBE_CREDENTIALS' غير موجود في GitHub Secrets.")
+                  log("❌ فشل الرفع: سر 'YOUTUBE_CREDENTIALS' غير موجود.")
                   return False
 
               try:
@@ -100,10 +99,10 @@ jobs:
                           "title": f"{title} | مسلسل مدبلج",
                           "description": f"شاهد مسلسل {title} كامل مدبلج.\nللمزيد زوروا موقعنا: {URL_TEXT}",
                           "tags": ["مسلسل", "مدبلج", title],
-                          "categoryId": "24" # ترفيه
+                          "categoryId": "24" 
                       },
                       "status": {
-                          "privacyStatus": "public" # اجعلها 'private' إذا أردت التجربة أولاً
+                          "privacyStatus": "public" 
                       }
                   }
 
@@ -168,12 +167,11 @@ jobs:
                       if os.path.exists(f): os.remove(f)
 
           async def main():
-              log("🚀 الجلسة بدأت - جاري البحث عن تريندات آخر 4 ساعات...")
+              log("🚀 الجلسة بدأت - جاري البحث عن تريندات...")
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة",  "كوري", "الذئاب", "باكستاني", "افلام", "حلقه", "حلقة","ديزنى"]
               
               try:
-                  # البحث في آخر 4 ساعات
                   pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
                   results = pytrends.related_queries()
                   
@@ -183,33 +181,25 @@ jobs:
                   
                   if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                       df_top = results['مدبلج']['top']
-                      # جلب جميع التريندات مرة واحدة وبدقة بناء على كلمات الفلترة
                       new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
                       
                       if new_titles:
-                          log(f"✅ تم العثور على {len(new_titles)} تريند جديد. جاري معالجتهم...")
+                          log(f"✅ تم العثور على {len(new_titles)} تريند جديد.")
+                          for q in new_titles:
+                              await create_video(q, int(time.time()))
+                              with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                       else:
-                          log("⚠️ لا توجد تريندات جديدة تتطابق مع الشروط.")
-
-                      for q in new_titles:
-                          await create_video(q, int(time.time()))
-                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
+                          log("⚠️ لا توجد تريندات جديدة حالياً.")
                   else:
-                      log("⚠️ لم يتم العثور على بيانات بحثية لهذه الكلمة في آخر 4 ساعات.")
+                      log("⚠️ لا توجد بيانات بحثية.")
 
               except Exception as e:
                   log(f"⚠️ خطأ أثناء جلب التريندات: {e}")
 
-              # الانتظار لمدة ساعة قبل إنهاء الجلسة
-              log(f"😴 تم الانتهاء من العمليات. سيتم الانتظار لمدة {WAIT_TIME/60} دقيقة قبل إنهاء الجلسة وبدء واحدة جديدة...")
-              await asyncio.sleep(WAIT_TIME)
-              log("🔄 انتهت فترة الانتظار. جاري إغلاق الجلسة وإعادة التشغيل...")
+              log("✅ تم الانتهاء من العمل. سيقوم GitHub بإغلاق الجلسة لتوفير الدقائق.")
 
-          async def run_async():
-              await main()
-              
           if __name__ == "__main__":
-              asyncio.run(run_async())
+              asyncio.run(main())
 
       - name: Save Progress
         if: always()
@@ -219,12 +209,3 @@ jobs:
           git add history.txt || echo "No history"
           git commit -m "Update history [skip ci]" || echo "No changes"
           git push || echo "Push failed"
-
-      - name: 🔄 Restart Session Automatically
-        if: always()
-        run: |
-          curl -X POST \
-            -H "Authorization: token ${{ github.token }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/dispatches \
-            -d '{"event_type": "restart-session"}'
