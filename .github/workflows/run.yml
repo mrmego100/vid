@@ -2,7 +2,7 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # كاحتياط فقط
+    - cron: "*/60 * * * *" # كاحتياط فقط
   workflow_dispatch:
 
 concurrency:
@@ -204,6 +204,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "الانتظار لمدة 60 ثانية إضافية قبل إطلاق الجلسة الجديدة..."
-          sleep 60
+          sleep 7000
           gh workflow run "Continuous Video Generator" --repo ${{ github.repository }}
           echo "🚀 تم إرسال أمر بدء الجلسة التلقائية القادمة."
