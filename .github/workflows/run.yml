@@ -2,14 +2,12 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "* * * * *" # تشغيل كل دقيقة
+    - cron: "*/10 * * * *" # كاحتياط فقط
   workflow_dispatch:
-  repository_dispatch:
-    types: [restart-session]
 
 concurrency:
   group: video-generator-group
-  cancel-in-progress: true
+  cancel-in-progress: false 
 
 jobs:
   build:
@@ -51,8 +49,6 @@ jobs:
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
           from pytrends.request import TrendReq
-          
-          # استيراد مكتبات يوتيوب
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
@@ -88,12 +84,10 @@ jobs:
               if not creds_json:
                   log("❌ فشل الرفع: سر 'YOUTUBE_CREDENTIALS' غير موجود.")
                   return False
-
               try:
                   creds_dict = json.loads(creds_json)
                   credentials = Credentials.from_authorized_user_info(creds_dict)
                   youtube = build('youtube', 'v3', credentials=credentials)
-
                   body = {
                       "snippet": {
                           "title": f"{title} | مسلسل مدبلج",
@@ -101,11 +95,8 @@ jobs:
                           "tags": ["مسلسل", "مدبلج", title],
                           "categoryId": "24" 
                       },
-                      "status": {
-                          "privacyStatus": "public" 
-                      }
+                      "status": { "privacyStatus": "public" }
                   }
-
                   media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
                   log("⏳ جاري الرفع إلى يوتيوب...")
                   request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
@@ -156,8 +147,6 @@ jobs:
                   out.release()
 
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
-                  
-                  # الرفع ليوتيوب
                   upload_to_youtube(final_p, title)
                   
               except Exception as e:
@@ -167,14 +156,13 @@ jobs:
                       if os.path.exists(f): os.remove(f)
 
           async def main():
-              log("🚀 الجلسة بدأت - جاري البحث عن تريندات...")
+              log("🚀 بدأت الجلسة - جاري البحث...")
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة",  "كوري", "الذئاب", "باكستاني", "افلام", "حلقه", "حلقة","ديزنى"]
               
               try:
                   pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
                   results = pytrends.related_queries()
-                  
                   used = []
                   if os.path.exists(HISTORY_FILE):
                       with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
@@ -184,23 +172,19 @@ jobs:
                       new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
                       
                       if new_titles:
-                          # اختيار نتيجة واحدة فقط لمعالجتها في هذه الجلسة
-                          q = new_titles[0]
-                          log(f"✅ تم العثور على تريند جديد: {q}")
+                          q = new_titles[0] # فيديو واحد فقط
+                          log(f"✅ تريند جديد: {q}")
                           await create_video(q, int(time.time()))
                           with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                           
-                          log("⏳ تم رفع الفيديو. الانتظار لمدة 1 دقيقة قبل إنهاء الجلسة...")
-                          await asyncio.sleep(60) 
+                          log("⏳ تم الرفع. انتظار 1 دقيقة داخل السكربت...")
+                          await asyncio.sleep(60)
                       else:
-                          log("⚠️ لا توجد تريندات جديدة حالياً.")
+                          log("⚠️ لا توجد تريندات جديدة.")
                   else:
                       log("⚠️ لا توجد بيانات بحثية.")
-
               except Exception as e:
-                  log(f"⚠️ خطأ أثناء جلب التريندات: {e}")
-
-              log("✅ تم الانتهاء من العمل. سيقوم GitHub بإغلاق الجلسة وتكرارها تلقائياً.")
+                  log(f"⚠️ خطأ: {e}")
 
           if __name__ == "__main__":
               asyncio.run(main())
@@ -213,3 +197,13 @@ jobs:
           git add history.txt || echo "No history"
           git commit -m "Update history [skip ci]" || echo "No changes"
           git push || echo "Push failed"
+
+      - name: ⏳ Final Wait & Trigger
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "الانتظار لمدة 60 ثانية إضافية قبل إطلاق الجلسة الجديدة..."
+          sleep 60
+          gh workflow run "Continuous Video Generator" --repo ${{ github.repository }}
+          echo "🚀 تم إرسال أمر بدء الجلسة التلقائية القادمة."
