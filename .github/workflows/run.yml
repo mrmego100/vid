@@ -184,10 +184,14 @@ jobs:
                       new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
                       
                       if new_titles:
-                          log(f"✅ تم العثور على {len(new_titles)} تريند جديد.")
-                          for q in new_titles:
-                              await create_video(q, int(time.time()))
-                              with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
+                          # اختيار نتيجة واحدة فقط لمعالجتها في هذه الجلسة
+                          q = new_titles[0]
+                          log(f"✅ تم العثور على تريند جديد: {q}")
+                          await create_video(q, int(time.time()))
+                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
+                          
+                          log("⏳ تم رفع الفيديو. الانتظار لمدة 1 دقيقة قبل إنهاء الجلسة...")
+                          await asyncio.sleep(60) 
                       else:
                           log("⚠️ لا توجد تريندات جديدة حالياً.")
                   else:
@@ -196,7 +200,7 @@ jobs:
               except Exception as e:
                   log(f"⚠️ خطأ أثناء جلب التريندات: {e}")
 
-              log("✅ تم الانتهاء من العمل. سيقوم GitHub بإغلاق الجلسة لتوفير الدقائق.")
+              log("✅ تم الانتهاء من العمل. سيقوم GitHub بإغلاق الجلسة وتكرارها تلقائياً.")
 
           if __name__ == "__main__":
               asyncio.run(main())
