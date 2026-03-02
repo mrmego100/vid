@@ -38,32 +38,26 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio dropbox
+          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
+          pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Create and Run Script
         shell: python
         env:
-          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
-          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
           from pytrends.request import TrendReq
-          import dropbox
+          
+          # استيراد مكتبات يوتيوب
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
 
           nest_asyncio.apply()
-
-          DROPBOX_FOLDER_PATH = "/Videos" 
-
-          def get_dropbox_client():
-              return dropbox.Dropbox(
-                  oauth2_refresh_token=os.environ.get('DROPBOX_REFRESH_TOKEN'),
-                  app_key=os.environ.get('DROPBOX_APP_KEY'),
-                  app_secret=os.environ.get('DROPBOX_APP_SECRET')
-              )
 
           def log(msg):
               print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -73,9 +67,8 @@ jobs:
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
-          SESSION_LIMIT = 60 * 60  # الجلسة تنتهي بعد 1 ساعة
-          CHECK_INTERVAL = 60      # البحث عن تريند كل دقيقة واحدة
-          
+          WAIT_TIME = 3600  # الانتظار 1 ساعة (بالثواني) بعد الانتهاء من العمليات
+
           now = datetime.datetime.now()
           current_time_str = now.strftime("%I:%M %p")
           current_date_str = now.strftime("%Y-%m-%d")
@@ -91,7 +84,40 @@ jobs:
               reshaped_text = reshape(text)
               return get_display(reshaped_text)
 
-          async def create_video(title, index, dbx_client):
+          def upload_to_youtube(video_path, title):
+              creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
+              if not creds_json:
+                  log("❌ فشل الرفع: سر 'YOUTUBE_CREDENTIALS' غير موجود في GitHub Secrets.")
+                  return False
+
+              try:
+                  creds_dict = json.loads(creds_json)
+                  credentials = Credentials.from_authorized_user_info(creds_dict)
+                  youtube = build('youtube', 'v3', credentials=credentials)
+
+                  body = {
+                      "snippet": {
+                          "title": f"{title} | مسلسل مدبلج",
+                          "description": f"شاهد مسلسل {title} كامل مدبلج.\nللمزيد زوروا موقعنا: {URL_TEXT}",
+                          "tags": ["مسلسل", "مدبلج", title],
+                          "categoryId": "24" # ترفيه
+                      },
+                      "status": {
+                          "privacyStatus": "public" # اجعلها 'private' إذا أردت التجربة أولاً
+                      }
+                  }
+
+                  media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+                  log("⏳ جاري الرفع إلى يوتيوب...")
+                  request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+                  response = request.execute()
+                  log(f"✅ تم الرفع بنجاح! رابط الفيديو: https://www.youtube.com/watch?v={response['id']}")
+                  return True
+              except Exception as e:
+                  log(f"❌ خطأ أثناء الرفع ليوتيوب: {e}")
+                  return False
+
+          async def create_video(title, index):
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
@@ -132,56 +158,52 @@ jobs:
 
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
                   
-                  log(f"📤 جاري رفع {title} إلى Dropbox...")
-                  file_path = f"{DROPBOX_FOLDER_PATH}/{title}.mp4".replace("//", "/")
-                  
-                  with open(final_p, "rb") as f:
-                      dbx_client.files_upload(
-                          f.read(), 
-                          file_path, 
-                          mode=dropbox.files.WriteMode.overwrite
-                      )
-                  
-                  log(f"✅ تم الرفع بنجاح! المسار: {file_path}")
+                  # الرفع ليوتيوب
+                  upload_to_youtube(final_p, title)
                   
               except Exception as e:
-                  log(f"❌ فشل: {e}")
+                  log(f"❌ فشل إنشاء الفيديو: {e}")
               finally:
                   for f in [audio_p, video_p, final_p]: 
                       if os.path.exists(f): os.remove(f)
 
           async def main():
-              start_time = time.time()
-              log("🚀 الجلسة بدأت - البحث عن تريند كل 60 ثانية")
-              dbx_client = get_dropbox_client()
+              log("🚀 الجلسة بدأت - جاري البحث عن تريندات آخر 4 ساعات...")
               pytrends = TrendReq(hl='ar', tz=0)
               excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة",  "كوري", "الذئاب", "باكستاني", "افلام", "حلقه", "حلقة","ديزنى"]
               
-              while (time.time() - start_time) < SESSION_LIMIT:
-                  try:
-                      log("🔍 جاري فحص التريندات الحالية...")
-                      pytrends.build_payload(["مدبلج"], timeframe='now 1-d', gprop='youtube')
-                      results = pytrends.related_queries()
+              try:
+                  # البحث في آخر 4 ساعات
+                  pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
+                  results = pytrends.related_queries()
+                  
+                  used = []
+                  if os.path.exists(HISTORY_FILE):
+                      with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
+                  
+                  if 'مدبلج' in results and results['مدبلج']['top'] is not None:
+                      df_top = results['مدبلج']['top']
+                      # جلب جميع التريندات مرة واحدة وبدقة بناء على كلمات الفلترة
+                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
                       
-                      used = []
-                      if os.path.exists(HISTORY_FILE):
-                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                      
-                      if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                          df_top = results['مدبلج']['top']
-                          new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
-                          
-                          for q in new_titles:
-                              await create_video(q, int(time.time()), dbx_client)
-                              with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
-                              # التحقق من الوقت بعد كل فيديو
-                              if (time.time() - start_time) >= SESSION_LIMIT: break
-                      
-                      log(f"😴 انتظار {CHECK_INTERVAL} ثانية قبل الفحص القادم...")
-                      await asyncio.sleep(CHECK_INTERVAL)
-                  except Exception as e:
-                      log(f"⚠️ خطأ: {e}")
-                      await asyncio.sleep(10)
+                      if new_titles:
+                          log(f"✅ تم العثور على {len(new_titles)} تريند جديد. جاري معالجتهم...")
+                      else:
+                          log("⚠️ لا توجد تريندات جديدة تتطابق مع الشروط.")
+
+                      for q in new_titles:
+                          await create_video(q, int(time.time()))
+                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
+                  else:
+                      log("⚠️ لم يتم العثور على بيانات بحثية لهذه الكلمة في آخر 4 ساعات.")
+
+              except Exception as e:
+                  log(f"⚠️ خطأ أثناء جلب التريندات: {e}")
+
+              # الانتظار لمدة ساعة قبل إنهاء الجلسة
+              log(f"😴 تم الانتهاء من العمليات. سيتم الانتظار لمدة {WAIT_TIME/60} دقيقة قبل إنهاء الجلسة وبدء واحدة جديدة...")
+              await asyncio.sleep(WAIT_TIME)
+              log("🔄 انتهت فترة الانتظار. جاري إغلاق الجلسة وإعادة التشغيل...")
 
           async def run_async():
               await main()
