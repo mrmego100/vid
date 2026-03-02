@@ -2,7 +2,7 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 */3 * * *" # تشغيل احتياطي كل 3 ساعات
+    - cron: "* * * * *" # تشغيل كل دقيقة
   workflow_dispatch:
   repository_dispatch:
     types: [restart-session]
