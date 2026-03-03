@@ -31,7 +31,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install Dependencies
         run: |
@@ -79,85 +79,78 @@ jobs:
               reshaped_text = reshape(text)
               return get_display(reshaped_text)
 
-          def download_images_from_video(query, duration):
-              log(f"🔍 البحث عن صور لـ: {query}")
+          def get_images_fallback(query):
+              log(f"🌐 جاري جلب صور بديلة من الويب لـ: {query}")
               output_dir = "frames"
               if not os.path.exists(output_dir): os.makedirs(output_dir)
-              
+              images = []
+              try:
+                  for i in range(6):
+                      response = requests.get(f"https://loremflickr.com/1280/720/{query.replace(' ', ',')}", timeout=15)
+                      if response.status_code == 200:
+                          path = os.path.join(output_dir, f"web_{i}.jpg")
+                          with open(path, "wb") as f: f.write(response.content)
+                          images.append(path)
+              except Exception as e: log(f"⚠️ خطأ صور الويب: {e}")
+              return images
+
+          def download_images_from_video(query, duration):
+              log(f"🔍 البحث عن لقطات لـ: {query}")
+              output_dir = "frames"
+              if not os.path.exists(output_dir): os.makedirs(output_dir)
               for f in os.listdir(output_dir): os.remove(os.path.join(output_dir, f))
 
-              video_url = None
               try:
-                  cmd = ["yt-dlp", "--get-url", "--format", "best[height<=720]", f"ytsearch1:{query}"]
+                  cmd = ["yt-dlp", "--get-url", "--format", "best[height<=720]", f"ytsearch1:{query} مسلسل"]
                   video_url = subprocess.check_output(cmd).decode().strip()
                   log("📺 تم العثور على فيديو في يوتيوب.")
+                  num_frames = int(duration / 3) + 2
+                  ffmpeg_cmd = [
+                      "ffmpeg", "-ss", "10", "-i", video_url, "-vf", "fps=1/3,scale=1280:720", 
+                      "-vframes", str(num_frames), f"{output_dir}/frame_%03d.jpg", "-y", "-loglevel", "quiet"
+                  ]
+                  subprocess.run(ffmpeg_cmd)
+                  frames = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(".jpg")]
+                  if frames: return sorted(frames)
               except:
-                  try:
-                      log("📱 لم يتم العثور في يوتيوب، جاري البحث في تيك توك...")
-                      cmd = ["yt-dlp", "--get-url", f"https://www.tiktok.com/search?q={query}"]
-                      video_url = subprocess.check_output(cmd).decode().strip()
-                  except:
-                      log("⚠️ لم يتم العثور على فيديوهات.")
-                      return []
-
-              if video_url:
-                  try:
-                      num_frames = int(duration / 3) + 2
-                      log(f"📸 استخراج {num_frames} صورة من الفيديو...")
-                      ffmpeg_cmd = [
-                          "ffmpeg", "-ss", "5", "-i", video_url, "-vf", f"fps=1/3,scale=1280:720", 
-                          "-vframes", str(num_frames), f"{output_dir}/frame_%03d.jpg", "-y", "-loglevel", "quiet"
-                      ]
-                      subprocess.run(ffmpeg_cmd)
-                      frames = [os.path.join(output_dir, f) for f in os.listdir(output_dir) if f.endswith(".jpg")]
-                      return sorted(frames)
-                  except Exception as e:
-                      log(f"❌ خطأ في استخراج الصور: {e}")
-              return []
+                  log("⚠️ فشل يوتيوب (حظر أو خطأ). ننتقل للخطة البديلة...")
+              
+              return get_images_fallback(query)
 
           def upload_to_youtube(video_path, title):
               creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
-              if not creds_json:
-                  log("❌ فشل الرفع: سر 'YOUTUBE_CREDENTIALS' غير موجود.")
-                  return False
+              if not creds_json: return False
               try:
                   creds_dict = json.loads(creds_json)
                   credentials = Credentials.from_authorized_user_info(creds_dict)
                   youtube = build('youtube', 'v3', credentials=credentials)
                   body = {
                       "snippet": {
-                          "title": f"{title} | مسلسل مدبلج",
-                          "description": f"شاهد مسلسل {title} كامل مدبلج.\nللمزيد زوروا موقعنا: {URL_TEXT}",
-                          "tags": ["مسلسل", "مدبلج", title],
-                          "categoryId": "24" 
+                          "title": f"مسلسل {title} مدبلج كامل",
+                          "description": f"شاهد مسلسل {title} مدبلج.\nالموقع: {URL_TEXT}",
+                          "categoryId": "24"
                       },
-                      "status": { "privacyStatus": "public" }
+                      "status": {"privacyStatus": "public"}
                   }
                   media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
-                  log("⏳ جاري الرفع إلى يوتيوب...")
-                  request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-                  response = request.execute()
-                  log(f"✅ تم الرفع بنجاح! رابط الفيديو: https://www.youtube.com/watch?v={response['id']}")
+                  youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
+                  log("✅ تم الرفع بنجاح!")
                   return True
               except Exception as e:
-                  log(f"❌ خطأ أثناء الرفع ليوتيوب: {e}")
+                  log(f"❌ خطأ الرفع: {e}")
                   return False
 
           async def create_video(title, index):
               audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
-                  full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
-                  await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
-                  
+                  await edge_tts.Communicate(f"{PRE_TEXT} {title} {POST_TEXT}", VOICE).save(audio_p)
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   
                   image_files = download_images_from_video(title, duration)
-
-                  # التعديل المطلوب: التوقف فوراً لو مفيش صور
                   if not image_files:
-                      log("🛑 إلغاء العملية: لم يتم العثور على أي صور. لن يتم إنشاء فيديو أو رفعه.")
+                      log("🛑 إلغاء: لم يتم العثور على أي صور.")
                       return False
 
                   if not os.path.exists("font.ttf"):
@@ -165,74 +158,49 @@ jobs:
                   
                   fps, size = 24, (1280, 720)
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-                  font_main = ImageFont.truetype("font.ttf", 45) 
-                  font_sub = ImageFont.truetype("font.ttf", 60) 
+                  font_main = ImageFont.truetype("font.ttf", 45)
+                  font_sub = ImageFont.truetype("font.ttf", 60)
                   font_timer = ImageFont.truetype("font.ttf", 30)
 
-                  num_total_frames = int(duration * fps)
-                  
-                  for frame_num in range(num_total_frames):
+                  for frame_num in range(int(duration * fps)):
                       img_idx = (frame_num // (fps * 3)) % len(image_files)
                       img = cv2.imread(image_files[img_idx])
-                      img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                      img = cv2.addWeighted(img, 0.6, np.zeros(img.shape, img.dtype), 0, 0)
-
+                      img = cv2.addWeighted(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), 0.6, np.zeros(img.shape, img.dtype), 0, 0)
                       pil_img = Image.fromarray(img)
                       draw = ImageDraw.Draw(pil_img)
-                      
-                      clean_title = fix_arabic(title)
-                      clean_url = URL_TEXT
-                      
-                      draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
-                      w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
-                      draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
-                      
+                      draw.text((30, 30), fix_arabic(title), font=font_main, fill=(255, 255, 255))
+                      w2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2]
+                      draw.text(((1280-w2)/2, 600), URL_TEXT, font=font_sub, fill=(255, 237, 0))
                       rem = max(0, int(duration) - (frame_num // fps))
                       timer_txt = f"00:{rem:02d}"
-                      w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
+                      w3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2]
                       draw.text(((1280-w3)/2, 670), timer_txt, font=font_timer, fill=(0, 255, 0))
-
                       out.write(cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR))
                   
                   out.release()
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
-                  upload_to_youtube(final_p, title)
-                  return True
+                  return upload_to_youtube(final_p, title)
               except Exception as e:
-                  log(f"❌ فشل إنشاء الفيديو: {e}")
+                  log(f"❌ خطأ: {e}")
                   return False
               finally:
-                  for f in [audio_p, video_p, final_p]: 
+                  for f in [audio_p, video_p, final_p]:
                       if os.path.exists(f): os.remove(f)
 
           async def main():
-              log("🚀 بدأت الجلسة - جاري البحث...")
-              pytrends = TrendReq(hl='ar', tz=0)
-              excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة",  "كوري", "الذئاب", "باكستاني", "حلقه", "حلقة","ديزنى"]
-              
+              pytrends = TrendReq(hl='ar')
+              ex = ["ديزني", "افلام", "هندي", "تركي"]
               try:
                   pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
-                  results = pytrends.related_queries()
-                  used = []
-                  if os.path.exists(HISTORY_FILE):
-                      with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                  
-                  if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                      df_top = results['مدبلج']['top']
-                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 15 and w not in used and not any(word in w for word in excluded_words)]
-                      
-                      if new_titles:
-                          q = new_titles[0]
-                          log(f"✅ تريند جديد: {q}")
-                          if await create_video(q, int(time.time())):
-                              with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
-                          log("⏳ تم الانتهاء من المعالجة.")
-                      else:
-                          log("⚠️ لا توجد تريندات جديدة.")
-                  else:
-                      log("⚠️ لا توجد بيانات بحثية.")
-              except Exception as e:
-                  log(f"⚠️ خطأ: {e}")
+                  df = pytrends.related_queries()['مدبلج']['top']
+                  used = open(HISTORY_FILE, "r", encoding="utf-8").read().splitlines() if os.path.exists(HISTORY_FILE) else []
+                  if df is not None:
+                      for q in df['query'].tolist():
+                          if "مدبلج" in q and q not in used and not any(w in q for w in ex):
+                              if await create_video(q, int(time.time())):
+                                  with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
+                              break
+              except Exception as e: log(f"⚠️ خطأ تريندات: {e}")
 
           if __name__ == "__main__":
               asyncio.run(main())
@@ -242,15 +210,14 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add history.txt || echo "No history"
-          git commit -m "Update history [skip ci]" || echo "No changes"
-          git push || echo "Push failed"
+          git add history.txt || echo ""
+          git commit -m "update history [skip ci]" || echo ""
+          git push || echo ""
 
       - name: ⏳ Final Wait & Trigger
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "الانتظار قبل إطلاق الجلسة الجديدة..."
           sleep 7000
           gh workflow run "Continuous Video Generator" --repo ${{ github.repository }}
