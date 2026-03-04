@@ -25,7 +25,7 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           PRIVATE_CHANNEL_ID: "-1003731241901" 
           # ضع رابط الدعوة الخاص بك هنا لضمان رؤية جميع الطلبات
-          INVITE_LINK: "https://t.me/+_gcP_IqowOBmNmFk"
+          INVITE_LINK: "https://t.me/+dTSrOUAfzwZlZjY0"
         run: |
           #!/bin/bash
           
