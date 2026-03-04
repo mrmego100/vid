@@ -44,8 +44,7 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json
-          import yt_dlp
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json, random
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
@@ -53,6 +52,7 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
+          from yt_dlp import YoutubeDL
 
           nest_asyncio.apply()
 
@@ -64,6 +64,10 @@ jobs:
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
+          INPUT_VIDEO = "downloaded_video.mp4"
+          RAW_DIR = "raw_frames"
+          PROCESSED_DIR = "processed_frames"
+          TARGET_FPS = 10
 
           now = datetime.datetime.now()
           current_time_str = now.strftime("%I:%M %p")
@@ -108,55 +112,18 @@ jobs:
                   log(f"❌ خطأ أثناء الرفع ليوتيوب: {e}")
                   return False
 
-          def get_images_from_search(query, duration_rounded):
-              bg_frames = []
-              video_path = "bg_video.mp4"
-              if os.path.exists(video_path): os.remove(video_path)
-              
-              ydl_opts = {
-                  'format': 'best',
-                  'outtmpl': video_path,
-                  'noplaylist': True,
-                  'quiet': True,
-                  'match_filter': yt_dlp.utils.match_filter_func("duration < 600") # مقاطع قصيرة فقط
-              }
-              
-              try:
-                  log(f"🔎 البحث عن فيديو في يوتيوب: {query}")
-                  with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                      ydl.download([f"ytsearch1:{query} مسلسل"])
-              except Exception as e:
-                  log(f"⚠️ لم يتم العثور في يوتيوب، محاولة البحث بأسلوب تيك توك: {e}")
-                  try:
-                      with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                          ydl.download([f"ytsearch1:{query} tiktok"])
-                  except Exception as e2:
-                      log(f"⚠️ فشل البحث الإحتياطي: {e2}")
-
-              if os.path.exists(video_path):
-                  cap = cv2.VideoCapture(video_path)
-                  total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                  if total_frames > 0:
-                      step = max(1, total_frames // max(1, duration_rounded))
-                      for i in range(duration_rounded):
-                          cap.set(cv2.CAP_PROP_POS_FRAMES, min(i * step, total_frames - 1))
-                          ret, frame = cap.read()
-                          if ret:
-                              frame = cv2.resize(frame, (1280, 720))
-                              bg_frames.append(frame)
-                          else:
-                              break
-                  cap.release()
-                  os.remove(video_path)
-              
-              # ملء الإطارات الناقصة أو في حال فشل التحميل بلون أسود كاحتياط
-              while len(bg_frames) < duration_rounded:
-                  bg_frames.append(np.zeros((720, 1280, 3), np.uint8))
-                  
-              return bg_frames
+          def upload_to_catbox(file_path):
+              print("🚀 جاري الرفع إلى Catbox...")
+              if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                  return "خطأ: فشل في إنشاء ملف الفيديو"
+              with open(file_path, "rb") as f:
+                  data = {"reqtype": "fileupload"}
+                  files = {"fileToUpload": f}
+                  response = requests.post("https://catbox.moe/user/api.php", data=data, files=files)
+                  return response.text.strip()
 
           async def create_video(title, index):
-              audio_p, video_p, final_p = f"a_{index}.mp3", f"v_{index}.mp4", f"final_{index}.mp4"
+              audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
               try:
                   log(f"🎬 معالجة: {title}")
                   full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
@@ -164,63 +131,126 @@ jobs:
                   
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
-                  duration_rounded = int(np.ceil(duration))
+                  
+                  # --- 2. تحميل الفيديو من يوتيوب ---
+                  print("🚀 جاري تحميل الفيديو...")
+                  ydl_opts = {
+                      'format': 'best[height<=720][ext=mp4]',
+                      'outtmpl': INPUT_VIDEO,
+                      'quiet': True,
+                      'default_search': 'ytsearch1'
+                  }
+
+                  with YoutubeDL(ydl_opts) as ydl:
+                      ydl.download([title])
+
+                  # --- 3. تقطيع الفيديو وحفظ الإطارات مع حذف صورة كل 5 صور ---
+                  print(f"📸 جاري التقطيع (تخطي صورة كل 5 صور)...")
+                  if not os.path.exists(RAW_DIR):
+                      os.makedirs(RAW_DIR)
+                  else:
+                      for f in os.listdir(RAW_DIR): os.remove(os.path.join(RAW_DIR, f))
+
+                  vidcap = cv2.VideoCapture(INPUT_VIDEO)
+                  fps_orig = vidcap.get(cv2.CAP_PROP_FPS)
+                  if fps_orig == 0: fps_orig = 30 
+                  hop = max(1, round(fps_orig / TARGET_FPS))
+
+                  count = 0
+                  saved_count = 0
+                  extracted_count = 0 # عداد الصور المستخرجة فعلياً من الفيديو الأصلي
+                  success, image = vidcap.read()
+
+                  while success:
+                      if count % hop == 0:
+                          # منطق الحذف: إذا كان رقم الصورة المستخرجة يقبل القسمة على 5، لا نحفظها
+                          # (extracted_count + 1) لتبدأ الحسبة من 1، فكل صورة رقم 5، 10، 15 تُحذف
+                          extracted_count += 1
+                          if extracted_count % 5 != 0:
+                              cv2.imwrite(f"{RAW_DIR}/f_{saved_count:05d}.jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                              saved_count += 1
+                              
+                      success, image = vidcap.read()
+                      count += 1
+                  vidcap.release()
+                  print(f"✅ تم استخراج وحفظ {saved_count} صورة (تم حذف {extracted_count // 5} صور بنجاح).")
+
+                  # --- تجهيز الإطارات لتتوافق مع طول الصوت (صورة تتغير كل 3 ثواني) ---
+                  raw_images = [os.path.join(RAW_DIR, f) for f in sorted(os.listdir(RAW_DIR)) if f.endswith(".jpg")]
+                  
+                  if not os.path.exists(PROCESSED_DIR):
+                      os.makedirs(PROCESSED_DIR)
+                  else:
+                      for f in os.listdir(PROCESSED_DIR): os.remove(os.path.join(PROCESSED_DIR, f))
 
                   if not os.path.exists("font.ttf"):
                       with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
                   
-                  fps, size = 24, (1280, 720)
-                  out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
-                  font_main = ImageFont.truetype("font.ttf", 60)
-                  font_sub = ImageFont.truetype("font.ttf", 55)
-                  font_timer = ImageFont.truetype("font.ttf", 40)
+                  font_main = ImageFont.truetype("font.ttf", 45) # اسم المسلسل (أصغر قليلاً ليناسب الزاوية)
+                  font_sub = ImageFont.truetype("font.ttf", 60) # الموقع
+                  font_timer = ImageFont.truetype("font.ttf", 30)
 
-                  # تجهيز مجموعة الصور للخلفية
-                  bg_images = get_images_from_search(title, duration_rounded)
+                  num_total_frames = int(duration * TARGET_FPS)
+                  
+                  for frame_num in range(num_total_frames):
+                      # اختيار الصورة بناءً على الوقت (تتغير كل 3 ثواني)
+                      if raw_images:
+                          img_idx = (frame_num // (TARGET_FPS * 3)) % len(raw_images)
+                          img = cv2.imread(raw_images[img_idx])
+                          img = cv2.resize(img, (1280, 720))
+                          img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                          # إضافة تعتيم خفيف للخلفية لجعل النص واضحاً
+                          img = cv2.addWeighted(img, 0.6, np.zeros(img.shape, img.dtype), 0, 0)
+                      else:
+                          img = np.zeros((720, 1280, 3), np.uint8)
 
-                  for frame_num in range(int(duration * fps)):
-                      # تحديد الصورة الحالية بناء على الثانية (صورة كل ثانية)
-                      bg_idx = min(frame_num // fps, len(bg_images) - 1)
-                      img = bg_images[bg_idx].copy()
-                      
-                      # تحويل مساحة الألوان للتعامل مع مكتبة PIL
-                      img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                      pil_img = Image.fromarray(img_rgb)
+                      pil_img = Image.fromarray(img)
                       draw = ImageDraw.Draw(pil_img)
                       
                       clean_title = fix_arabic(title)
-                      rem = max(0, duration_rounded - (frame_num // fps))
+                      clean_url = URL_TEXT
+                      
+                      # 1. اسم المسلسل أعلى اليسار
+                      draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
+                      
+                      # 2. الموقع في المنتصف (مكان الترجمة)
+                      w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
+                      draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
+                      
+                      # 3. العداد الصغير أسفل الموقع
+                      rem = max(0, int(duration) - (frame_num // TARGET_FPS))
                       timer_txt = f"00:{rem:02d}"
-                      
-                      w1, h1 = draw.textbbox((0, 0), clean_title, font=font_main)[2:]
-                      w2, h2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2:]
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
-                      
-                      # 1. اسم المسلسل: الأعلى على اليسار
-                      title_x = 30
-                      title_y = 30
-                      draw.text((title_x, title_y), clean_title, font=font_main, fill=(255, 255, 255), stroke_width=3, stroke_fill=(0, 0, 0))
-                      
-                      # 2. اسم الموقع: في المنتصف بالأسفل (مكان الترجمة)
-                      url_x = (1280 - w2) / 2
-                      url_y = 720 - h2 - 60
-                      draw.text((url_x, url_y), URL_TEXT, font=font_sub, fill=(255, 237, 0), stroke_width=3, stroke_fill=(0, 0, 0))
-                      
-                      # 3. العداد: الأعلى على اليمين
-                      timer_x = 1280 - w3 - 30
-                      timer_y = 30
-                      draw.text((timer_x, timer_y), timer_txt, font=font_timer, fill=(0, 255, 0), stroke_width=2, stroke_fill=(0, 0, 0))
-                      
-                      out.write(cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR))
-                  out.release()
+                      draw.text(((1280-w3)/2, 670), timer_txt, font=font_timer, fill=(0, 255, 0))
 
-                  os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
-                  upload_to_youtube(final_p, title)
+                      # حفظ الإطار المعدل ليقرأه ffmpeg
+                      cv2.imwrite(f"{PROCESSED_DIR}/f_{frame_num:05d}.jpg", cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+                  # --- 4. إنشاء الفيديو باستخدام FFmpeg ---
+                  print(f"🎞️ جاري رندر الفيديو بسرعة {TARGET_FPS} إطار/ثانية...")
+                  cmd = (
+                      f"ffmpeg -y -r {TARGET_FPS} -i {PROCESSED_DIR}/f_%05d.jpg -i {audio_p} "
+                      f"-c:v libx264 -pix_fmt yuv420p -crf 23 -c:a aac -shortest {final_p}"
+                  )
+                  subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                   
+                  upload_to_youtube(final_p, title)
+
+                  # --- 5. الرفع الفوري للفيديو الناتج إلى Catbox ---
+                  try:
+                      url = upload_to_catbox(final_p)
+                      if "http" in url:
+                          print(f"✅ انتهى بنجاح!")
+                          print(f"🔗 رابط الفيديو الجديد ({TARGET_FPS}fps): {url}")
+                      else:
+                          print(f"❌ خطأ من الموقع: {url}")
+                  except Exception as e:
+                      print(f"❌ حدث خطأ أثناء الرفع: {e}")
+
               except Exception as e:
                   log(f"❌ فشل إنشاء الفيديو: {e}")
               finally:
-                  for f in [audio_p, video_p, final_p]: 
+                  for f in [audio_p, INPUT_VIDEO, final_p]: 
                       if os.path.exists(f): os.remove(f)
 
           async def main():
@@ -237,15 +267,15 @@ jobs:
                   
                   if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                       df_top = results['مدبلج']['top']
-                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
+                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 15 and w not in used and not any(word in w for word in excluded_words)]
                       
                       if new_titles:
-                          q = new_titles[0] # فيديو واحد فقط
+                          q = new_titles[0]
                           log(f"✅ تريند جديد: {q}")
                           await create_video(q, int(time.time()))
                           with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
                           
-                          log("⏳ تم الرفع. انتظار 1 دقيقة داخل السكربت...")
+                          log("⏳ تم الرفع. انتظار...")
                           await asyncio.sleep(60)
                       else:
                           log("⚠️ لا توجد تريندات جديدة.")
@@ -271,7 +301,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "الانتظار لمدة 60 ثانية إضافية قبل إطلاق الجلسة الجديدة..."
+          echo "الانتظار قبل إطلاق الجلسة الجديدة..."
           sleep 7000
           gh workflow run "Continuous Video Generator" --repo ${{ github.repository }}
-          echo "🚀 تم إرسال أمر بدء الجلسة التلقائية القادمة."
