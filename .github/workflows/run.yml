@@ -39,24 +39,14 @@ jobs:
             "@M017_1_6_7_8_9_10_11_12_13_14_15"
             "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة 3"
             "الاسم الليلي 3"
-
-            "@M017_1_6_7_8_9_10_11_12_13_14_15"
-            "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة 3"
-            "الاسم الليلي 3"
-
-            "@M017_1_6_7_8_9_10_11_12_13_14_15"
-            "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة 3"
-            "الاسم الليلي 3"
           )
 
           echo "بدء العملية: $(date)"
 
-          # تحديد وقت النهار (من 9 صباحاً إلى 8 مساءً)
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
           DAY_START=$(( 9 * 60 ))
           DAY_END=$(( 20 * 60 ))
 
-          # حلقة التكرار لمعالجة القنوات
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
             
@@ -66,26 +56,31 @@ jobs:
               TARGET_NAME="${CHANNELS[i+2]}"
             fi
 
-            echo "معالجة القناة: $CHANNEL_ID | الهدف: $TARGET_NAME"
-            
-            # 1. تغيير اسم القناة
-            RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
-                 -d chat_id="$CHANNEL_ID" \
-                 -d title="$TARGET_NAME")
-            
-            echo "رد التليجرام: $RESPONSE"
-            
-            # 2. إرسال الرسالة الترويجية إذا تم تغيير الاسم بنجاح
-            if echo "$RESPONSE" | grep -q '"ok":true'; then
-               echo "تم تغيير الاسم. جارٍ إرسال رسالة الانضمام..."
-               
-               # تحضير الرسالة مع التاريخ والوقت
-               MSG_TEXT="<b>يجب عليك الانضمام للقناة .. إنضم من هنا%0Ahttps://t.me/+dTSrOUAfzwZlZjY0%0Aالتاريخ: $(date +'%Y-%m-%d %H:%M:%S')</b>"
-               
-               curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-               -d chat_id="$CHANNEL_ID" \
-               -d text="$MSG_TEXT" \
-               -d parse_mode="HTML"
+            # 1. جلب معلومات القناة الحالية للتأكد من العنوان
+            CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
+            CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title')
+
+            # 2. تغيير الاسم فقط إذا كان مختلفاً عن الاسم الحالي
+            if [ "$CURRENT_TITLE" != "$TARGET_NAME" ]; then
+                echo "تغيير الاسم مطلوب: من '$CURRENT_TITLE' إلى '$TARGET_NAME'"
+                
+                RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                     -d chat_id="$CHANNEL_ID" \
+                     -d title="$TARGET_NAME")
+                
+                if echo "$RESPONSE" | grep -q '"ok":true'; then
+                   echo "تم تغيير الاسم. جارٍ إرسال رسالة التنبيه..."
+                   
+                   # إرسال الرسالة مع الرابط الصحيح (تم ترميز + بـ %2B)
+                   MSG_TEXT="<b>يجب عليك الانضمام للقناة .. إنضم من هنا%0Ahttps://t.me/%2BdTSrOUAfzwZlZjY0%0Aالتاريخ: $(date +'%Y-%m-%d %H:%M:%S')</b>"
+                   
+                   curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+                   -d chat_id="$CHANNEL_ID" \
+                   -d text="$MSG_TEXT" \
+                   -d parse_mode="HTML"
+                fi
+            else
+                echo "القناة $CHANNEL_ID عنوانها محدث بالفعل. لا إجراء مطلوب."
             fi
             
             sleep 2
@@ -96,7 +91,6 @@ jobs:
           
           echo "جاري تشغيل جلسة جديدة..."
           
-          # تشغيل الجلسة الجديدة (run.yml)
           curl -X POST -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/run.yml/dispatches" \
