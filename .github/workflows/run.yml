@@ -2,18 +2,31 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 * * * *" # يعمل تلقائياً كل ساعة
-  workflow_dispatch: # يسمح لك بالتشغيل اليدوي
+    - cron: "0 * * * *" # بيشتغل كل ساعة
+  workflow_dispatch:
+
+concurrency:
+  group: video-generator-group
+  cancel-in-progress: false 
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: 🧹 Delete Old Workflow Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 2
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -22,123 +35,199 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
-          pip install edge-tts arabic-reshaper python-bidi opencv-python pillow numpy requests
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install google-generativeai edge-tts diffusers transformers accelerate arabic-reshaper python-bidi deep-translator pytrends opencv-python-headless pillow numpy requests nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib torch
 
-      - name: Create and Run Script
+      - name: Run Integrated Script
         shell: python
+        env:
+          GEMINI_API_KEY: "AIzaSyBE81UIhl5pJbN6UwxoHMV3aXGPoHBSUNs"
+          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np, random, urllib.parse, time
+          import os, shutil, asyncio, subprocess, requests, cv2, numpy as np, random, time, datetime, json, sys
+          import torch
+          import google.generativeai as genai
+          import edge_tts
+          from diffusers import StableDiffusionPipeline
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
+          from deep_translator import GoogleTranslator
+          from pytrends.request import TrendReq
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
 
-          # --- إعدادات المحتوى ---
-          TITLE = "أبي فوق الشجرة"
-          VOICE = "ar-EG-SalmaNeural" # صوت مصري احترافي
-          URL_TEXT = "www.mshort.do.am"
+          # --- الإعدادات ---
+          VOICE = "ar-SA-ZariyahNeural"
+          MY_SITE = "www.mshort.do.am"
+          HISTORY_FILE = "history.txt"
+          FONT_PATH = "Cairo-Bold.ttf"
+          TARGET_FPS = 10
 
-          def log(msg): print(f"[LOG] {msg}")
-          def fix_arabic(text): return get_display(reshape(text))
+          def log(msg):
+              print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
+              sys.stdout.flush()
 
-          async def generate_audio():
-              log("🔊 جاري توليد التعليق الصوتي باستخدام AI...")
-              speech_text = f"أهلاً بكم.. نقدم لكم اليوم الفيلم الكلاسيكي الشهير {TITLE}. يمكنكم المشاهدة الآن عبر موقعنا الموضح أمامكم بجودة عالية."
-              await edge_tts.Communicate(speech_text, VOICE).save("audio.mp3")
-              return "audio.mp3"
+          def fix_ar(text):
+              return get_display(reshape(text))
 
-          def generate_flux_images():
-              log("🎨 جاري توليد 5 صور باستخدام موديل FLUX.1...")
-              paths = []
-              # وصف سينمائي دقيق لفيلم "أبي فوق الشجرة"
-              prompt = f"Cinematic 1960s vintage Egyptian movie scene, beach summer atmosphere, inspired by the movie '{TITLE}', ultra-realistic, cinematic lighting, 8k, photorealistic, no text"
-              encoded_prompt = urllib.parse.quote(prompt)
-              
-              for i in range(5):
-                  seed = random.randint(1, 999999999)
-                  # رابط استدعاء موديل Flux
-                  url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true&seed={seed}&model=flux"
-                  
-                  try:
-                      log(f"⏳ ذكاء اصطناعي: يتخيل الصورة {i+1}...")
-                      response = requests.get(url, timeout=60)
-                      if response.status_code == 200:
-                          path = f"img_{i}.jpg"
-                          with open(path, "wb") as f:
-                              f.write(response.content)
-                          paths.append(path)
-                          time.sleep(1) # استراحة قصيرة للسيرفر
-                      else:
-                          log(f"⚠️ فشل الطلب {i+1}: كود {response.status_code}")
-                  except Exception as e:
-                      log(f"⚠️ خطأ في توليد الصورة {i}: {e}")
-              
-              return paths
+          # تحميل الخط لضمان العربي
+          if not os.path.exists(FONT_PATH):
+              r = requests.get("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf")
+              with open(FONT_PATH, 'wb') as f: f.write(r.content)
 
-          def make_video(images, audio):
-              log("🎞️ جاري تركيب الفيديو وإضافة النصوص العربية...")
-              # معرفة مدة الصوت الحقيقية لضبط سرعة الصور
-              d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio]
-              total_duration = float(subprocess.check_output(d_cmd).decode().strip())
-              
-              for path in images:
-                  img = Image.open(path).convert("RGB").resize((1280, 720))
-                  draw = ImageDraw.Draw(img)
-                  
-                  # تحميل الخط العربي الافتراضي في Linux
-                  try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 50)
-                  except: font = ImageFont.load_default()
-                  
-                  # إضافة طبقة سوداء خفيفة تحت النص لزيادة الوضوح
-                  overlay = Image.new('RGBA', img.size, (0,0,0,0))
-                  draw_overlay = ImageDraw.Draw(overlay)
-                  draw_overlay.rectangle([0, 0, 1280, 100], fill=(0,0,0,80)) # شريط علوي
-                  draw_overlay.rectangle([0, 600, 1280, 720], fill=(0,0,0,80)) # شريط سفلي
-                  img.paste(overlay, (0,0), overlay)
+          # إعداد الذكاء الاصطناعي
+          genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
+          model = genai.GenerativeModel('gemini-1.5-flash')
 
-                  # كتابة النص (أعلى الصورة وأسفلها)
-                  draw.text((40, 25), fix_arabic(TITLE), font=font, fill=(255, 255, 255))
-                  draw.text((40, 630), URL_TEXT, font=font, fill=(255, 237, 0)) # لون أصفر
-                  img.save(path)
+          def generate_story(title):
+              prompt = f"اكتب قصة واقعية مشوقة عن '{title}' بالعربية الفصحى، بين 100 لـ 150 كلمة. ابدأ السرد مباشرة."
+              try:
+                  res = model.generate_content(prompt)
+                  return res.text.strip() if res.text else None
+              except Exception as e:
+                  log(f"Error Gemini: {e}")
+                  return None
 
-              # حساب زمن عرض كل صورة (مدة الصوت / عدد الصور)
-              frame_rate = len(images) / total_duration
-              
-              # أمر FFmpeg لدمج الصور مع الصوت بدقة عالية
-              cmd = (
-                  f"ffmpeg -y -framerate {frame_rate} -i img_%d.jpg -i {audio} "
-                  f"-c:v libx264 -pix_fmt yuv420p -crf 20 -c:a aac -shortest video.mp4"
-              )
-              subprocess.run(cmd, shell=True, check=True)
-              return "video.mp4"
+          def add_overlays(img_path, title_ar):
+              img = Image.open(img_path).convert("RGBA")
+              draw = ImageDraw.Draw(img)
+              w, h = img.size
+              try:
+                  font_t = ImageFont.truetype(FONT_PATH, 45)
+                  font_s = ImageFont.truetype(FONT_PATH, 35)
+              except:
+                  font_t = font_s = ImageFont.load_default()
 
-          def upload_to_catbox(file):
-              log("🚀 جاري رفع الفيديو النهائي إلى Catbox...")
-              if not os.path.exists(file): return "File not found"
-              with open(file, "rb") as f:
-                  response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
-              return response.text.strip()
+              # 1. العنوان (خلفية على قد النص)
+              txt_t = fix_ar(title_ar)
+              bbox_t = draw.textbbox((30, 30), txt_t, font=font_t)
+              draw.rectangle([bbox_t[0]-10, bbox_t[1]-5, bbox_t[2]+10, bbox_t[3]+5], fill=(0,0,0,230))
+              draw.text((30, 30), txt_t, fill="white", font=font_t)
+
+              # 2. شاهد من هنا
+              line1 = fix_ar(".. شاهد من هنا ..")
+              bbox1 = draw.textbbox((0, 0), line1, font=font_s)
+              w1, h1 = bbox1[2]-bbox1[0], bbox1[3]-bbox1[1]
+              x1, y1 = (w - w1) // 2, h - 130
+              draw.rectangle([x1-15, y1-5, x1+w1+15, y1+h1+5], fill=(0,0,0,230))
+              draw.text((x1, y1), line1, fill="white", font=font_s)
+
+              # 3. الموقع
+              line2 = MY_SITE
+              bbox2 = draw.textbbox((0, 0), line2, font=font_s)
+              w2, h2 = bbox2[2]-bbox2[0], bbox2[3]-bbox2[1]
+              x2, y2 = (w - w2) // 2, h - 70
+              draw.rectangle([x2-15, y2-5, x2+w2+15, y2+h2+5], fill=(0,0,0,230))
+              draw.text((x2, y2), line2, fill="#FFED00", font=font_s)
+
+              img.convert("RGB").save(img_path, quality=95)
 
           async def main():
-              # 1. توليد الصوت
-              audio_file = await generate_audio()
-              # 2. توليد صور Flux التوليدية
-              image_files = generate_flux_images()
-              
-              if not image_files:
-                  log("❌ فشل توليد الصور بواسطة Flux. حاول مرة أخرى.")
+              log("🚀 البحث عن تريند...")
+              pytrends = TrendReq(hl='ar', tz=0)
+              try:
+                  pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
+                  df = pytrends.related_queries()['مدبلج']['top']
+                  if df is None: 
+                      log("⚠️ لا توجد بيانات. خروج.")
+                      return
+                  
+                  used = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
+                  new_trends = [w for w in df['query'].tolist() if w not in used]
+                  
+                  if not new_trends:
+                      log("⚠️ لا توجد تريندات جديدة. خروج.")
+                      return
+                  
+                  title = new_trends[0]
+                  log(f"✅ تريند جديد: {title}")
+              except:
+                  log("❌ فشل الاتصال بـ Google Trends.")
                   return
 
-              # 3. دمج الفيديو
-              final_video = make_video(image_files, audio_file)
+              story = generate_story(title)
+              if not story: return
+
+              # تنظيف
+              for p in ["frames", "clips"]:
+                  if os.path.exists(p): shutil.rmtree(p)
+                  os.makedirs(p)
+
+              audio_p = "audio.mp3"
+              await edge_tts.Communicate(story, VOICE).save(audio_p)
               
-              # 4. الرفع والحصول على الرابط
-              url = upload_to_catbox(final_video)
+              res = subprocess.run(f'ffprobe -i {audio_p} -show_entries format=duration -v quiet -of csv="p=0"', shell=True, capture_output=True, text=True)
+              duration = int(float(res.stdout.strip()))
+
+              # رسم الصور (Stable Diffusion Turbo للسرعة)
+              eng_t = GoogleTranslator(source='ar', target='en').translate(title)
+              log("🎨 جاري توليد الصور...")
+              pipe = StableDiffusionPipeline.from_pretrained("stabilityai/sd-turbo", torch_dtype=torch.float16, variant="fp16").to("cuda")
               
-              print("\n" + "="*40)
-              log(f"✨ العمل تم بواسطة الذكاء الاصطناعي (Flux + EdgeTTS)")
-              log(f"🔗 رابط الفيديو: {url}")
-              print("="*40)
+              img_dur = 6
+              num_imgs = (duration // img_dur) + 1
+              
+              for i in range(num_imgs):
+                  log(f"🖼️ معالجة اللقطة {i+1}")
+                  img = pipe(prompt=f"Cinematic realistic scene of {eng_t}, high quality, no text", num_inference_steps=2).images[0]
+                  f_p = f"frames/f_{i:03d}.jpg"
+                  img.resize((1280, 720)).save(f_p)
+                  add_overlays(f_p, title)
+                  
+                  c_p = f"clips/c_{i:03d}.mp4"
+                  # فيديو ثابت بدون زووم
+                  subprocess.run(f"ffmpeg -y -loop 1 -i {f_p} -c:v libx264 -t {img_dur} -pix_fmt yuv420p -r 25 -preset ultrafast {c_p}", shell=True, capture_output=True)
+
+              # دمج
+              with open("list.txt", "w") as f:
+                  for i in range(num_imgs): f.write(f"file 'clips/c_{i:03d}.mp4'\n")
+              
+              final_v = "final.mp4"
+              subprocess.run(f"ffmpeg -y -f concat -safe 0 -i list.txt -i {audio_p} -c:v copy -c:a aac -shortest -r {TARGET_FPS} {final_v}", shell=True)
+
+              if os.path.exists(final_v):
+                  # رفع Catbox
+                  with open(final_v, "rb") as f:
+                      cat_url = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f}).text.strip()
+                  log(f"🔗 رابط Catbox: {cat_url}")
+
+                  # رفع YouTube (إذا توفرت البيانات)
+                  creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
+                  if creds_json:
+                      try:
+                          creds_dict = json.loads(creds_json)
+                          credentials = Credentials.from_authorized_user_info(creds_dict)
+                          youtube = build('youtube', 'v3', credentials=credentials)
+                          body = {
+                              "snippet": {"title": f"{title} | مدبلج حصري", "description": f"شاهد الان {title} مدبلج.\nالموقع: {MY_SITE}", "categoryId": "24"},
+                              "status": {"privacyStatus": "public"}
+                          }
+                          media = MediaFileUpload(final_v, chunksize=-1, resumable=True)
+                          youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
+                          log("✅ تم الرفع ليوتيوب!")
+                      except Exception as e: log(f"⚠️ فشل يوتيوب: {e}")
+
+                  with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(title + "\n")
+                  log("✨ تمت العملية بنجاح!")
 
           if __name__ == "__main__":
               asyncio.run(main())
+
+      - name: Save Progress
+        if: always()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add history.txt || echo "No changes"
+          git commit -m "Update history [skip ci]" || echo "No changes"
+          git push || echo "Push failed"
+
+      - name: ⏳ Re-trigger Workflow
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 3600
+          gh workflow run "Continuous Video Generator" --repo ${{ github.repository }}
