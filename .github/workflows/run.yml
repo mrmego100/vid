@@ -17,7 +17,7 @@ jobs:
 
           # التوكن والـ Channel ID
           BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
-          CHANNEL_ID="@YourChannelUsername"  # ضع هنا اسم قناتك أو معرفها -1001234567890
+          CHANNEL_ID="M015_1_6_7_8_9_10_11_12_13_14_15" 
 
           # الساعة الحالية
           HOUR=$(date +'%H')
