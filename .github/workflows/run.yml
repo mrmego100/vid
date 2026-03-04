@@ -2,12 +2,8 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "*/60 * * * *" # كاحتياط فقط
+    - cron: "*/60 * * * *"
   workflow_dispatch:
-
-concurrency:
-  group: video-generator-group
-  cancel-in-progress: false 
 
 jobs:
   build:
@@ -20,14 +16,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🧹 Delete Old Workflow Runs
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 2
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -35,277 +23,126 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg nodejs git
-          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
-          pip install ddgs
-          pip install -U git+https://github.com/yt-dlp/yt-dlp.git@master
-          pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install edge-tts arabic-reshaper python-bidi opencv-python pillow numpy requests google-generativeai
 
       - name: Create and Run Script
         shell: python
         env:
-          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json, random, urllib.parse
+          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np
+          import google.generativeai as genai
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
-          from pytrends.request import TrendReq
-          from google.oauth2.credentials import Credentials
-          from googleapiclient.discovery import build
-          from googleapiclient.http import MediaFileUpload
-          
-          try:
-              from ddgs import DDGS
-          except ImportError:
-              from duckduckgo_search import DDGS
 
-          nest_asyncio.apply()
-
-          def log(msg):
-              print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
-              sys.stdout.flush()
-
+          # --- إعدادات أساسية ---
+          TITLE = "أبي فوق الشجرة"
           VOICE = "ar-SA-ZariyahNeural"
           URL_TEXT = "www.mshort.do.am"
+          API_KEY = os.getenv("GEMINI_API_KEY")
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
-          HISTORY_FILE = "history.txt"
-          PROCESSED_DIR = "processed_frames"
-          TARGET_FPS = 10
 
-          now = datetime.datetime.now()
-          current_time_str = now.strftime("%I:%M %p")
-          current_date_str = now.strftime("%Y-%m-%d")
+          genai.configure(api_key=API_KEY)
 
-          PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
-          POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو.  
-          لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة.  
-          أو قم بالدخول على الموقع المعروض أمامك باللون الأصفر.  
-          تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}.  
-          آراكم في فيديو آخر."""
+          def log(msg):
+              print(f"[LOG] {msg}")
 
           def fix_arabic(text):
-              reshaped_text = reshape(text)
-              return get_display(reshaped_text)
+              return get_display(reshape(text))
 
-          def upload_to_youtube(video_path, title):
-              creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
-              if not creds_json:
-                  log("❌ فشل الرفع ليوتيوب: سر 'YOUTUBE_CREDENTIALS' غير موجود.")
-                  return False
+          async def generate_audio():
+              log("🔊 جاري توليد التعليق الصوتي...")
+              text = f"أهلاً بكم، موضوعنا اليوم عن الفيلم والمسلسل الشهير {TITLE}. فيلم الرومانسية والاستعراض المصري الرائع."
+              communicate = edge_tts.Communicate(text, VOICE)
+              await communicate.save("audio.mp3")
+              return "audio.mp3"
+
+          def generate_images_with_gemini():
+              log("🎨 جاري توليد 5 صور بواسطة Gemini API...")
               try:
-                  creds_dict = json.loads(creds_json)
-                  credentials = Credentials.from_authorized_user_info(creds_dict)
-                  youtube = build('youtube', 'v3', credentials=credentials)
-                  body = {
-                      "snippet": {
-                          "title": f"{title} | مسلسل مدبلج",
-                          "description": f"شاهد مسلسل {title} كامل مدبلج.\nللمزيد زوروا موقعنا: {URL_TEXT}",
-                          "tags": ["مسلسل", "مدبلج", title],
-                          "categoryId": "24" 
-                      },
-                      "status": { "privacyStatus": "public" }
-                  }
-                  media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
-                  log("⏳ جاري الرفع إلى يوتيوب...")
-                  request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-                  response = request.execute()
-                  log(f"✅ تم الرفع بنجاح! رابط يوتيوب: https://www.youtube.com/watch?v={response['id']}")
-                  return True
+                  # ملاحظة: استخدام نموذج توليد الصور Imagen
+                  model = genai.ImageGenerationModel("imagen-3.0-generate-001")
+                  prompt = f"Cinematic high quality still from the movie style of 'Abi Foq Al Shajara' Egyptian 1960s aesthetic, beach, vintage colors, highly detailed, no text."
+                  
+                  response = model.generate_images(
+                      prompt=prompt,
+                      number_of_images=5,
+                      aspect_ratio="16:9",
+                      safety_filter_level="block_few"
+                  )
+                  
+                  image_paths = []
+                  for i, img in enumerate(response.images):
+                      path = f"image_{i}.png"
+                      img.save(path)
+                      image_paths.append(path)
+                  return image_paths
               except Exception as e:
-                  err_msg = str(e)
-                  if "uploadLimitExceeded" in err_msg:
-                      log("❌ تنبيه هام: لقد استنفدت الحد الأقصى اليومي المسموح به للرفع على يوتيوب. يرجى الانتظار 24 ساعة لعودة الرفع التلقائي.")
-                  else:
-                      log(f"❌ خطأ أثناء الرفع ليوتيوب: {err_msg}")
-                  return False
+                  log(f"❌ فشل توليد الصور من Gemini: {e}")
+                  return []
+
+          def create_video(image_paths, audio_path):
+              log("🎞️ جاري تجميع الفيديو...")
+              # الحصول على مدة الصوت
+              d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path]
+              duration = float(subprocess.check_output(d_cmd).decode().strip())
+              
+              # تجهيز الخط
+              if not os.path.exists("font.ttf"):
+                  with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
+              
+              # معالجة الصور (إضافة نصوص)
+              processed_images = []
+              for i, path in enumerate(image_paths):
+                  img = Image.open(path).convert("RGB").resize((1280, 720))
+                  draw = ImageDraw.Draw(img)
+                  font = ImageFont.truetype("font.ttf", 60)
+                  
+                  # إضافة اسم المسلسل ورابط الموقع
+                  draw.text((50, 50), fix_arabic(TITLE), font=font, fill=(255, 255, 255))
+                  draw.text((50, 620), URL_TEXT, font=font, fill=(255, 237, 0))
+                  
+                  proc_path = f"proc_{i}.jpg"
+                  img.save(proc_path)
+                  processed_images.append(proc_path)
+
+              # استخدام FFmpeg لدمج الصور مع الصوت
+              # كل صورة تأخذ (مدة الصوت / 5) ثانية
+              img_duration = duration / 5
+              with open("concat.txt", "w") as f:
+                  for p in processed_images:
+                      f.write(f"file '{p}'\nduration {img_duration}\n")
+                  f.write(f"file '{processed_images[-1]}'\n") # تكرار الصورة الأخيرة لتفادي مشاكل FFmpeg
+
+              cmd = f"ffmpeg -y -f concat -safe 0 -i concat.txt -i {audio_path} -c:v libx264 -pix_fmt yuv420p -r 24 -shortest final_video.mp4"
+              subprocess.run(cmd, shell=True)
+              return "final_video.mp4"
 
           def upload_to_catbox(file_path):
               log("🚀 جاري الرفع إلى Catbox...")
-              if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-                  return "خطأ: فشل في إنشاء ملف الفيديو"
               with open(file_path, "rb") as f:
-                  data = {"reqtype": "fileupload"}
-                  files = {"fileToUpload": f}
-                  response = requests.post("https://catbox.moe/user/api.php", data=data, files=files)
-                  return response.text.strip()
-
-          def download_image_fallback(query):
-              log(f"🔍 جاري البحث عن صورة بديلة للمسلسل: {query}")
-              img_path = "downloaded_bg.jpg"
-              try:
-                  with DDGS() as ddgs:
-                      results = list(ddgs.images(query, max_results=1))
-                      if results:
-                          img_url = results[0]['image']
-                          log(f"🔗 جاري تحميل الصورة البديلة: {img_url}")
-                          response = requests.get(img_url, timeout=10)
-                          if response.status_code == 200:
-                              with open(img_path, 'wb') as f:
-                                  f.write(response.content)
-                              return img_path
-              except Exception as e:
-                  log(f"⚠️ فشل البحث أو تحميل الصورة البديلة: {e}")
-              return None
-
-          def generate_bg_with_ai(query):
-              log(f"🎨 جاري رسم صورة بالذكاء الاصطناعي للمسلسل: {query}...")
-              img_path = "downloaded_bg.jpg"
-              try:
-                  # استخدام خدمة مجانية تماماً وممتازة لرسم الصور بدون مفاتيح
-                  prompt = f"Cinematic epic background poster for a TV series titled '{query}', dark dramatic lighting, no text, no watermarks, highly detailed"
-                  safe_prompt = urllib.parse.quote(prompt)
-                  url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1280&height=720&nologo=true"
-                  
-                  response = requests.get(url, timeout=20)
-                  if response.status_code == 200:
-                      with open(img_path, 'wb') as f:
-                          f.write(response.content)
-                      log("✅ تم توليد الصورة بنجاح!")
-                      return img_path
-              except Exception as e:
-                  log(f"⚠️ فشل توليد الصورة بالذكاء الاصطناعي (السبب: {e}). سيتم استخدام البحث العادي...")
-              return download_image_fallback(query)
-
-          async def create_video(title, index):
-              audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
-              try:
-                  log(f"🎬 معالجة: {title}")
-                  full_speech = f"{PRE_TEXT} {title} {POST_TEXT}"
-                  await edge_tts.Communicate(full_speech, VOICE).save(audio_p)
-                  
-                  d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
-                  duration = float(subprocess.check_output(d_cmd).decode().strip())
-                  
-                  # --- 2. توليد/تحميل صورة للمسلسل ---
-                  bg_path = generate_bg_with_ai(title)
-                  
-                  if not os.path.exists(PROCESSED_DIR):
-                      os.makedirs(PROCESSED_DIR)
-                  else:
-                      for f in os.listdir(PROCESSED_DIR): os.remove(os.path.join(PROCESSED_DIR, f))
-
-                  if not os.path.exists("font.ttf"):
-                      with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
-                  
-                  font_main = ImageFont.truetype("font.ttf", 45)
-                  font_sub = ImageFont.truetype("font.ttf", 60)
-                  font_timer = ImageFont.truetype("font.ttf", 30)
-
-                  # تجهيز الصورة الأساسية مع الحماية (Fallback) لـ OpenCV
-                  base_img = None
-                  if bg_path and os.path.exists(bg_path):
-                      try:
-                          base_img = cv2.imread(bg_path)
-                          if base_img is not None:
-                              base_img = cv2.resize(base_img, (1280, 720))
-                              base_img = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
-                              base_img = cv2.addWeighted(base_img, 0.6, np.zeros(base_img.shape, base_img.dtype), 0, 0)
-                      except Exception as e:
-                          log(f"⚠️ خطأ أثناء معالجة الصورة: {e}")
-                          base_img = None
-                          
-                  if base_img is None:
-                      log("ℹ️ الصورة المحملة كانت تالفة أو غير مدعومة، سيتم استخدام خلفية سوداء كحل طوارئ.")
-                      base_img = np.zeros((720, 1280, 3), np.uint8)
-
-                  num_total_frames = int(duration * TARGET_FPS)
-                  
-                  log("📸 جاري تجهيز إطارات الفيديو...")
-                  for frame_num in range(num_total_frames):
-                      pil_img = Image.fromarray(base_img.copy())
-                      draw = ImageDraw.Draw(pil_img)
-                      
-                      clean_title = fix_arabic(title)
-                      clean_url = URL_TEXT
-                      
-                      draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
-                      w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
-                      draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
-                      
-                      rem = max(0, int(duration) - (frame_num // TARGET_FPS))
-                      timer_txt = f"00:{rem:02d}"
-                      w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
-                      draw.text(((1280-w3)/2, 670), timer_txt, font=font_timer, fill=(0, 255, 0))
-
-                      cv2.imwrite(f"{PROCESSED_DIR}/f_{frame_num:05d}.jpg", cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-                  # --- 4. إنشاء الفيديو باستخدام FFmpeg ---
-                  log(f"🎞️ جاري رندر الفيديو بسرعة {TARGET_FPS} إطار/ثانية...")
-                  cmd = (
-                      f"ffmpeg -y -r {TARGET_FPS} -i {PROCESSED_DIR}/f_%05d.jpg -i {audio_p} "
-                      f"-c:v libx264 -pix_fmt yuv420p -crf 23 -c:a aac -shortest {final_p}"
-                  )
-                  subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                  
-                  # --- 5. الرفع الفوري إلى Catbox (أولاً وقبل أي شيء) ---
-                  try:
-                      url = upload_to_catbox(final_p)
-                      if "http" in url:
-                          log(f"✅ تم الرفع لـ Catbox بنجاح!")
-                          log(f"🔗 الرابط: {url}")
-                      else:
-                          log(f"❌ خطأ من Catbox: {url}")
-                  except Exception as e:
-                      log(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
-
-                  # --- 6. الرفع إلى YouTube (ثانياً) ---
-                  upload_to_youtube(final_p, title)
-
-              except Exception as e:
-                  log(f"❌ فشل إنشاء الفيديو بالكامل: {e}")
-              finally:
-                  for f in [audio_p, "downloaded_bg.jpg", final_p]: 
-                      if os.path.exists(f): os.remove(f)
+                  response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
+              return response.text.strip()
 
           async def main():
-              log("🚀 بدأت الجلسة - جاري البحث...")
-              pytrends = TrendReq(hl='ar', tz=0)
-              excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة",  "كوري", "الذئاب", "باكستاني", "افلام", "حلقه", "حلقة","ديزنى"]
+              if not API_KEY:
+                  log("❌ خطأ: GEMINI_API_KEY غير موجود في الأكشن!")
+                  return
+
+              audio = await generate_audio()
+              images = generate_images_with_gemini()
               
-              try:
-                  pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
-                  results = pytrends.related_queries()
-                  used = []
-                  if os.path.exists(HISTORY_FILE):
-                      with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                  
-                  if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                      df_top = results['مدبلج']['top']
-                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 15 and w not in used and not any(word in w for word in excluded_words)]
-                      
-                      if new_titles:
-                          q = new_titles[0]
-                          log(f"✅ تريند جديد: {q}")
-                          await create_video(q, int(time.time()))
-                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(q + "\n")
-                          
-                          log("⏳ تم الرفع. انتظار...")
-                          await asyncio.sleep(60)
-                      else:
-                          log("⚠️ لا توجد تريندات جديدة.")
-                  else:
-                      log("⚠️ لا توجد بيانات بحثية.")
-              except Exception as e:
-                  log(f"⚠️ خطأ: {e}")
+              if not images:
+                  log("⚠️ لم يتم توليد صور، سيتم التوقف.")
+                  return
+
+              video = create_video(images, audio)
+              url = upload_to_catbox(video)
+              
+              log(f"✅ انتهى العمل بنجاح!")
+              log(f"🔗 رابط الفيديو على Catbox: {url}")
 
           if __name__ == "__main__":
               asyncio.run(main())
-
-      - name: Save Progress
-        if: always()
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add history.txt || echo "No history"
-          git commit -m "Update history [skip ci]" || echo "No changes"
-          git push || echo "Push failed"
-
-      - name: ⏳ Final Wait & Trigger
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "الانتظار قبل إطلاق الجلسة الجديدة..."
-          sleep 7000
-          gh workflow run "Continuous Video Generator" --repo ${{ github.repository }}
