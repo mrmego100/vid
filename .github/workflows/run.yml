@@ -9,13 +9,15 @@ jobs:
       contents: write
       actions: write
     steps:
+
       - name: 🧹 Delete Old Workflow Runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 2 
+          
       - name: Update Titles
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -43,15 +45,14 @@ jobs:
 
           echo "بدء العملية: $(date)"
 
-          # حساب الوقت الحالي بالدقائق (ساعات * 60 + دقائق)
+          # حساب الوقت الحالي بالدقائق
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
-          DAY_START=$(( 6 * 60 ))      # 360 دقيقة
-          DAY_END=$(( 18 * 60 ))       # 1080 دقيقة
+          DAY_START=$(( 6 * 60 ))
+          DAY_END=$(( 18 * 60 ))
 
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
             
-            # المقارنة بالدقائق
             if [ "$NOW_MINUTES" -ge "$DAY_START" ] && [ "$NOW_MINUTES" -lt "$DAY_END" ]; then
               TARGET_NAME="${CHANNELS[i+1]}"
             else
@@ -68,11 +69,11 @@ jobs:
             sleep 2
           done
 
-          echo "إعادة تشغيل الجلسة بعد دقيقة..."
+          echo "إعادة تشغيل الجلسة بعد 30 ثانية..."
           sleep 30
           
-          # إعادة التشغيل باستخدام API (لتجنب خطأ git)
+          # استبدل main.yml باسم ملف الـ workflow الخاص بك فعلياً
           curl -X POST -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${GITHUB_WORKFLOW}/dispatches" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/main.yml/dispatches" \
           -d '{"ref":"main"}'
