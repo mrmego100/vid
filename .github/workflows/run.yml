@@ -1,10 +1,18 @@
-- name: Run Task and Re-queue
+name: Update Telegram Channels
+on:
+  schedule:
+    - cron: '* * * * *' # سيعمل هذا السكربت تلقائياً كل دقيقة
+  workflow_dispatch: # للسماح لك بتشغيله يدوياً من واجهة GitHub عند الحاجة
+
+jobs:
+  run-task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Titles
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           #!/bin/bash
-
-          BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
 
           # ========================================================
           # القنوات (كل قناة تأخذ 3 أسطر)
@@ -26,7 +34,6 @@
 
           echo "بدء العملية: $(date)"
 
-          # حلقة التكرار تقفز 3 خطوات في كل مرة (i+=3)
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
             DAY_NAME="${CHANNELS[i+1]}"
@@ -40,8 +47,9 @@
               TARGET_NAME="$NIGHT_NAME"
             fi
 
-            # التحقق والتحديث
             echo "معالجة القناة: $CHANNEL_ID"
+            
+            # التحقق والتحديث
             CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
             CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title // empty')
 
@@ -55,8 +63,4 @@
             fi
             sleep 2
           done
-
-          # إعادة التشغيل
-          echo "الانتظار لمدة دقيقة..."
-          sleep 60
-          gh workflow run "$GITHUB_WORKFLOW"
+          echo "تمت المهمة بنجاح."
