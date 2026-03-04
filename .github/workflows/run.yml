@@ -1,13 +1,13 @@
 name: Update Telegram Channels
 on:
-  workflow_dispatch: # للتشغيل اليدوي الأولي فقط
+  workflow_dispatch: 
 
 jobs:
   run-task:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write # هذا الإذن ضروري جداً لتشغيل الـ workflow من جديد
+      actions: write
     steps:
       - name: Update Titles
         env:
@@ -41,8 +41,9 @@ jobs:
             DAY_NAME="${CHANNELS[i+1]}"
             NIGHT_NAME="${CHANNELS[i+2]}"
 
+            # منطق الوقت الجديد: من 06 إلى 18 نهار، والباقي ليل
             HOUR=$(date +'%H')
-            if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
+            if [ $HOUR -ge 6 ] && [ $HOUR -le 18 ]; then
               TARGET_NAME="$DAY_NAME"
             else
               TARGET_NAME="$NIGHT_NAME"
@@ -55,7 +56,6 @@ jobs:
                  -d chat_id="$CHANNEL_ID" \
                  -d title="$TARGET_NAME")
             
-            # طباعة الرد للتصحيح
             echo "رد التليجرام: $RESPONSE"
             
             sleep 2
@@ -64,4 +64,4 @@ jobs:
           # إعادة التشغيل بعد دقيقة
           echo "الانتظار لمدة دقيقة ثم إعادة التشغيل..."
           sleep 60
-          gh workflow run "$GITHUB_WORKFLOW"
+          gh workflow run run.yml
