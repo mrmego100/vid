@@ -37,7 +37,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg nodejs git
           pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
-          pip install google-genai ddgs
+          pip install ddgs
           pip install -U git+https://github.com/yt-dlp/yt-dlp.git@master
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
@@ -45,9 +45,8 @@ jobs:
         shell: python
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json, random
+          import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json, random, urllib.parse
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
@@ -56,13 +55,10 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
           
-          # استيراد آمن لتخطي مشكلة تغيير اسم مكتبة البحث
           try:
               from ddgs import DDGS
           except ImportError:
               from duckduckgo_search import DDGS
-              
-          from google import genai
 
           nest_asyncio.apply()
 
@@ -117,7 +113,11 @@ jobs:
                   log(f"✅ تم الرفع بنجاح! رابط يوتيوب: https://www.youtube.com/watch?v={response['id']}")
                   return True
               except Exception as e:
-                  log(f"❌ خطأ أثناء الرفع ليوتيوب: {e}")
+                  err_msg = str(e)
+                  if "uploadLimitExceeded" in err_msg:
+                      log("❌ تنبيه هام: لقد استنفدت الحد الأقصى اليومي المسموح به للرفع على يوتيوب. يرجى الانتظار 24 ساعة لعودة الرفع التلقائي.")
+                  else:
+                      log(f"❌ خطأ أثناء الرفع ليوتيوب: {err_msg}")
                   return False
 
           def upload_to_catbox(file_path):
@@ -148,35 +148,24 @@ jobs:
                   log(f"⚠️ فشل البحث أو تحميل الصورة البديلة: {e}")
               return None
 
-          def generate_bg_with_gemini(query):
-              api_key = os.environ.get('GEMINI_API_KEY')
-              img_path = "downloaded_bg.jpg"
-              
-              if not api_key:
-                  log("⚠️ مفتاح Gemini غير موجود في الأسرار، سيتم استخدام البحث العادي.")
-                  return download_image_fallback(query)
-              
+          def generate_bg_with_ai(query):
               log(f"🎨 جاري رسم صورة بالذكاء الاصطناعي للمسلسل: {query}...")
+              img_path = "downloaded_bg.jpg"
               try:
-                  # استخدام الحزمة الجديدة google.genai
-                  client = genai.Client(api_key=api_key)
-                  prompt = f"A cinematic, high quality background poster for a TV series called '{query}', no text, no watermarks, dramatic lighting, 16:9 aspect ratio."
+                  # استخدام خدمة مجانية تماماً وممتازة لرسم الصور بدون مفاتيح
+                  prompt = f"Cinematic epic background poster for a TV series titled '{query}', dark dramatic lighting, no text, no watermarks, highly detailed"
+                  safe_prompt = urllib.parse.quote(prompt)
+                  url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1280&height=720&nologo=true"
                   
-                  result = client.models.generate_images(
-                      model='imagen-3.0-generate-001',
-                      prompt=prompt,
-                      config=dict(
-                          number_of_images=1,
-                          aspect_ratio="16:9"
-                      )
-                  )
-                  
-                  result.generated_images[0].image.save(img_path)
-                  log("✅ تم توليد الصورة بنجاح عبر Gemini!")
-                  return img_path
+                  response = requests.get(url, timeout=20)
+                  if response.status_code == 200:
+                      with open(img_path, 'wb') as f:
+                          f.write(response.content)
+                      log("✅ تم توليد الصورة بنجاح!")
+                      return img_path
               except Exception as e:
                   log(f"⚠️ فشل توليد الصورة بالذكاء الاصطناعي (السبب: {e}). سيتم استخدام البحث العادي...")
-                  return download_image_fallback(query)
+              return download_image_fallback(query)
 
           async def create_video(title, index):
               audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
@@ -188,8 +177,8 @@ jobs:
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   
-                  # --- 2. توليد صورة للمسلسل بواسطة Gemini ---
-                  bg_path = generate_bg_with_gemini(title)
+                  # --- 2. توليد/تحميل صورة للمسلسل ---
+                  bg_path = generate_bg_with_ai(title)
                   
                   if not os.path.exists(PROCESSED_DIR):
                       os.makedirs(PROCESSED_DIR)
@@ -206,14 +195,17 @@ jobs:
                   # تجهيز الصورة الأساسية مع الحماية (Fallback) لـ OpenCV
                   base_img = None
                   if bg_path and os.path.exists(bg_path):
-                      base_img = cv2.imread(bg_path)
-                      
-                  if base_img is not None:
-                      base_img = cv2.resize(base_img, (1280, 720))
-                      base_img = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
-                      # تعتيم الصورة بنسبة 60% ليظهر النص
-                      base_img = cv2.addWeighted(base_img, 0.6, np.zeros(base_img.shape, base_img.dtype), 0, 0)
-                  else:
+                      try:
+                          base_img = cv2.imread(bg_path)
+                          if base_img is not None:
+                              base_img = cv2.resize(base_img, (1280, 720))
+                              base_img = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
+                              base_img = cv2.addWeighted(base_img, 0.6, np.zeros(base_img.shape, base_img.dtype), 0, 0)
+                      except Exception as e:
+                          log(f"⚠️ خطأ أثناء معالجة الصورة: {e}")
+                          base_img = None
+                          
+                  if base_img is None:
                       log("ℹ️ الصورة المحملة كانت تالفة أو غير مدعومة، سيتم استخدام خلفية سوداء كحل طوارئ.")
                       base_img = np.zeros((720, 1280, 3), np.uint8)
 
@@ -227,14 +219,10 @@ jobs:
                       clean_title = fix_arabic(title)
                       clean_url = URL_TEXT
                       
-                      # 1. اسم المسلسل أعلى اليسار
                       draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
-                      
-                      # 2. الموقع في المنتصف
                       w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
                       draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
                       
-                      # 3. العداد الصغير أسفل الموقع
                       rem = max(0, int(duration) - (frame_num // TARGET_FPS))
                       timer_txt = f"00:{rem:02d}"
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
