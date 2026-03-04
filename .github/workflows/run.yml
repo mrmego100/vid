@@ -31,12 +31,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg nodejs
-          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio yt-dlp
+          pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
+          pip install -U --pre yt-dlp
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Create and Run Script
@@ -113,7 +114,7 @@ jobs:
                   return False
 
           def upload_to_catbox(file_path):
-              print("🚀 جاري الرفع إلى Catbox...")
+              log("🚀 جاري الرفع إلى Catbox...")
               if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
                   return "خطأ: فشل في إنشاء ملف الفيديو"
               with open(file_path, "rb") as f:
@@ -133,20 +134,20 @@ jobs:
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   
                   # --- 2. تحميل الفيديو من يوتيوب ---
-                  print("🚀 جاري تحميل الفيديو...")
+                  log("🚀 جاري تحميل الفيديو...")
                   ydl_opts = {
                       'format': 'best[height<=720][ext=mp4]',
                       'outtmpl': INPUT_VIDEO,
                       'quiet': True,
                       'default_search': 'ytsearch1',
-                      'extractor_args': {'youtube': ['player_client=android']}
+                      'extractor_args': {'youtube': ['player_client=tv,android,ios,web']}
                   }
 
                   with YoutubeDL(ydl_opts) as ydl:
                       ydl.download([title])
 
                   # --- 3. تقطيع الفيديو وحفظ الإطارات مع حذف صورة كل 5 صور ---
-                  print(f"📸 جاري التقطيع (تخطي صورة كل 5 صور)...")
+                  log(f"📸 جاري التقطيع (تخطي صورة كل 5 صور)...")
                   if not os.path.exists(RAW_DIR):
                       os.makedirs(RAW_DIR)
                   else:
@@ -174,7 +175,7 @@ jobs:
                       success, image = vidcap.read()
                       count += 1
                   vidcap.release()
-                  print(f"✅ تم استخراج وحفظ {saved_count} صورة (تم حذف {extracted_count // 5} صور بنجاح).")
+                  log(f"✅ تم استخراج وحفظ {saved_count} صورة (تم حذف {extracted_count // 5} صور بنجاح).")
 
                   # --- تجهيز الإطارات لتتوافق مع طول الصوت (صورة تتغير كل 3 ثواني) ---
                   raw_images = [os.path.join(RAW_DIR, f) for f in sorted(os.listdir(RAW_DIR)) if f.endswith(".jpg")]
@@ -228,7 +229,7 @@ jobs:
                       cv2.imwrite(f"{PROCESSED_DIR}/f_{frame_num:05d}.jpg", cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
 
                   # --- 4. إنشاء الفيديو باستخدام FFmpeg ---
-                  print(f"🎞️ جاري رندر الفيديو بسرعة {TARGET_FPS} إطار/ثانية...")
+                  log(f"🎞️ جاري رندر الفيديو بسرعة {TARGET_FPS} إطار/ثانية...")
                   cmd = (
                       f"ffmpeg -y -r {TARGET_FPS} -i {PROCESSED_DIR}/f_%05d.jpg -i {audio_p} "
                       f"-c:v libx264 -pix_fmt yuv420p -crf 23 -c:a aac -shortest {final_p}"
@@ -241,12 +242,12 @@ jobs:
                   try:
                       url = upload_to_catbox(final_p)
                       if "http" in url:
-                          print(f"✅ انتهى بنجاح!")
-                          print(f"🔗 رابط الفيديو الجديد ({TARGET_FPS}fps): {url}")
+                          log(f"✅ انتهى بنجاح!")
+                          log(f"🔗 رابط الفيديو الجديد ({TARGET_FPS}fps): {url}")
                       else:
-                          print(f"❌ خطأ من الموقع: {url}")
+                          log(f"❌ خطأ من الموقع: {url}")
                   except Exception as e:
-                      print(f"❌ حدث خطأ أثناء الرفع: {e}")
+                      log(f"❌ حدث خطأ أثناء الرفع: {e}")
 
               except Exception as e:
                   log(f"❌ فشل إنشاء الفيديو: {e}")
