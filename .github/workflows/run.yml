@@ -2,8 +2,8 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 * * * *" # يعمل كل ساعة بشكل تلقائي
-  workflow_dispatch: # يسمح لك بتشغيله يدوياً في أي وقت
+    - cron: "0 * * * *"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -37,13 +37,11 @@ jobs:
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
 
-          # --- الإعدادات الثابتة ---
           TITLE = "أبي فوق الشجرة"
-          VOICE = "ar-EG-SalmaNeural" # صوت مصري كلاسيكي
+          VOICE = "ar-EG-SalmaNeural"
           URL_TEXT = "www.mshort.do.am"
           API_KEY = os.getenv("GEMINI_API_KEY")
 
-          # تهيئة عميل Gemini الجديد
           client = genai.Client(api_key=API_KEY)
 
           def log(msg): print(f"[LOG] {msg}")
@@ -53,32 +51,31 @@ jobs:
 
           async def generate_audio():
               log("🔊 جاري نطق اسم المسلسل...")
-              # نص النطق
-              speech_text = f"أهلاً بكم.. نقدم لكم اليوم الفيلم والمسلسل الكلاسيكي الشهير {TITLE}. يمكنكم المشاهدة الآن عبر موقعنا الموضح أمامكم."
+              speech_text = f"أهلاً بكم.. نقدم لكم اليوم الفيلم الكلاسيكي الشهير {TITLE}. يمكنكم المشاهدة الآن عبر موقعنا الموضح أمامكم."
               await edge_tts.Communicate(speech_text, VOICE).save("audio.mp3")
               return "audio.mp3"
 
           def find_imagen_model():
-              log("🔍 فحص الموديلات المتاحة لتوليد الصور...")
+              log("🔍 فحص الموديلات المتاحة...")
               try:
                   for m in client.models.list():
                       if 'imagen' in m.name.lower():
                           log(f"✅ تم اختيار موديل: {m.name}")
                           return m.name
               except Exception as e:
-                  log(f"⚠️ خطأ أثناء فحص الموديلات: {e}")
-              return "imagen-3.0-generate-001" # احتياطي
+                  log(f"⚠️ خطأ فحص الموديلات: {e}")
+              return "imagen-3.0-generate-001"
 
           def generate_images():
               model_id = find_imagen_model()
-              log(f"🎨 جاري طلب 5 صور من {model_id}...")
+              log(f"🎨 جاري طلب 4 صور من {model_id}...") # تم التعديل لـ 4 صور
               try:
                   prompt = f"Cinematic 1960s Egyptian cinema style, beach scenes, inspired by the movie '{TITLE}', vintage colors, highly detailed, no text, 4k"
                   response = client.models.generate_images(
                       model=model_id,
                       prompt=prompt,
                       config=types.GenerateImagesConfig(
-                          number_of_images=5,
+                          number_of_images=4, # الحد الأقصى لموديل 4.0
                           aspect_ratio="16:9",
                           output_mime_type="image/jpeg"
                       )
@@ -96,31 +93,22 @@ jobs:
                   return []
 
           def make_video(images, audio):
-              log("🎞️ جاري تجميع الفيديو عبر FFmpeg...")
-              
-              # الحصول على مدة الصوت الحقيقية
+              log("🎞️ جاري تجميع الفيديو...")
               duration_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio]
               total_duration = float(subprocess.check_output(duration_cmd).decode().strip())
               
-              # إضافة نصوص على الصور قبل التجميع
               for path in images:
                   img = Image.open(path).resize((1280, 720))
                   draw = ImageDraw.Draw(img)
-                  
-                  # محاولة استخدام خط يدعم العربية في Ubuntu
                   try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 45)
                   except: font = ImageFont.load_default()
                   
-                  # رسم اسم المسلسل والرابط
                   draw.text((50, 50), fix_arabic(TITLE), font=font, fill=(255, 255, 255))
                   draw.text((50, 620), URL_TEXT, font=font, fill=(255, 237, 0))
                   img.save(path)
 
-              # حساب مدة كل صورة (مدة الصوت مقسمة على 5 صور)
-              img_speed = total_duration / 5
+              img_speed = total_duration / len(images) # تقسيم الوقت على عدد الصور الفعلي
               
-              # أمر FFmpeg لدمج الصور بالصوت
-              # نستخدم -framerate 1/x لعرض كل صورة لمدة x ثانية
               cmd = (
                   f"ffmpeg -y -framerate 1/{img_speed} -i img_%d.jpg -i {audio} "
                   f"-c:v libx264 -pix_fmt yuv420p -r 25 -shortest video.mp4"
@@ -129,31 +117,19 @@ jobs:
               return "video.mp4"
 
           def upload_to_catbox(file):
-              log("🚀 جاري الرفع إلى Catbox...")
-              if not os.path.exists(file): return "File not found"
+              log("🚀 الرفع إلى Catbox...")
               with open(file, "rb") as f:
                   r = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
               return r.text
 
           async def main():
-              if not API_KEY:
-                  log("❌ خطأ: لم يتم العثور على GEMINI_API_KEY في الإعدادات!")
-                  return
-
+              if not API_KEY: return log("Missing API Key")
               audio_file = await generate_audio()
               image_files = generate_images()
-              
-              if not image_files:
-                  log("⚠️ لا توجد صور ناتجة، سيتم إيقاف العملية.")
-                  return
-
+              if not image_files: return
               video_file = make_video(image_files, audio_file)
               catbox_url = upload_to_catbox(video_file)
-              
-              print("-" * 30)
-              log(f"✨ اكتمل العمل بنجاح!")
-              log(f"🔗 رابط الفيديو: {catbox_url}")
-              print("-" * 30)
+              log(f"✨ الرابط النهائي: {catbox_url}")
 
           if __name__ == "__main__":
               asyncio.run(main())
