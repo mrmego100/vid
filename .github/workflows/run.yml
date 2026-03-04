@@ -107,7 +107,7 @@ jobs:
                   log("⏳ جاري الرفع إلى يوتيوب...")
                   request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
                   response = request.execute()
-                  log(f"✅ تم الرفع بنجاح! رابط الفيديو: https://www.youtube.com/watch?v={response['id']}")
+                  log(f"✅ تم الرفع بنجاح! رابط يوتيوب: https://www.youtube.com/watch?v={response['id']}")
                   return True
               except Exception as e:
                   log(f"❌ خطأ أثناء الرفع ليوتيوب: {e}")
@@ -133,53 +133,55 @@ jobs:
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   
-                  # --- 2. تحميل الفيديو من يوتيوب ---
-                  log("🚀 جاري تحميل الفيديو...")
-                  
-                  ydl_opts = {
-                      'format': 'best[height<=720][ext=mp4]',
-                      'outtmpl': INPUT_VIDEO,
-                      'quiet': True,
-                      'no_warnings': True,
-                      'default_search': 'ytsearch1',
-                      'geo_bypass': True,
-                      'extractor_args': {'youtube': ['player_client=ios,android,web']}
-                  }
-
-                  with YoutubeDL(ydl_opts) as ydl:
-                      ydl.download([title])
+                  # --- 2. تحميل الفيديو من يوتيوب (محمي بـ Try/Except لضمان استمرار السكربت) ---
+                  log("🚀 جاري تحميل الفيديو من يوتيوب...")
+                  try:
+                      ydl_opts = {
+                          'format': 'best[height<=720][ext=mp4]',
+                          'outtmpl': INPUT_VIDEO,
+                          'quiet': True,
+                          'no_warnings': True,
+                          'default_search': 'ytsearch1',
+                          'geo_bypass': True,
+                          'extractor_args': {'youtube': ['player_client=ios,android']}
+                      }
+                      with YoutubeDL(ydl_opts) as ydl:
+                          ydl.download([title])
+                  except Exception as yt_error:
+                      log(f"⚠️ يوتيوب قام بحظر التحميل. سيتم إنشاء الفيديو بدون خلفية متحركة لضمان خروجه للنور. (الخطأ: تم التخطي)")
 
                   # --- 3. تقطيع الفيديو وحفظ الإطارات مع حذف صورة كل 5 صور ---
-                  log(f"📸 جاري التقطيع (تخطي صورة كل 5 صور)...")
                   if not os.path.exists(RAW_DIR):
                       os.makedirs(RAW_DIR)
                   else:
                       for f in os.listdir(RAW_DIR): os.remove(os.path.join(RAW_DIR, f))
 
-                  vidcap = cv2.VideoCapture(INPUT_VIDEO)
-                  fps_orig = vidcap.get(cv2.CAP_PROP_FPS)
-                  if fps_orig == 0: fps_orig = 30 
-                  hop = max(1, round(fps_orig / TARGET_FPS))
-
-                  count = 0
                   saved_count = 0
-                  extracted_count = 0 # عداد الصور المستخرجة فعلياً من الفيديو الأصلي
-                  success, image = vidcap.read()
+                  if os.path.exists(INPUT_VIDEO):
+                      log(f"📸 جاري التقطيع (تخطي صورة كل 5 صور)...")
+                      vidcap = cv2.VideoCapture(INPUT_VIDEO)
+                      fps_orig = vidcap.get(cv2.CAP_PROP_FPS)
+                      if fps_orig == 0: fps_orig = 30 
+                      hop = max(1, round(fps_orig / TARGET_FPS))
 
-                  while success:
-                      if count % hop == 0:
-                          # منطق الحذف: إذا كان رقم الصورة المستخرجة يقبل القسمة على 5، لا نحفظها
-                          extracted_count += 1
-                          if extracted_count % 5 != 0:
-                              cv2.imwrite(f"{RAW_DIR}/f_{saved_count:05d}.jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                              saved_count += 1
-                              
+                      count = 0
+                      extracted_count = 0
                       success, image = vidcap.read()
-                      count += 1
-                  vidcap.release()
-                  log(f"✅ تم استخراج وحفظ {saved_count} صورة (تم حذف {extracted_count // 5} صور بنجاح).")
 
-                  # --- تجهيز الإطارات لتتوافق مع طول الصوت (صورة تتغير كل 3 ثواني) ---
+                      while success:
+                          if count % hop == 0:
+                              extracted_count += 1
+                              if extracted_count % 5 != 0:
+                                  cv2.imwrite(f"{RAW_DIR}/f_{saved_count:05d}.jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                                  saved_count += 1
+                          success, image = vidcap.read()
+                          count += 1
+                      vidcap.release()
+                      log(f"✅ تم استخراج وحفظ {saved_count} صورة.")
+                  else:
+                      log("ℹ️ لا يوجد فيديو للتقطيع، سيتم استخدام خلفية سوداء احتياطية.")
+
+                  # --- تجهيز الإطارات لتتوافق مع طول الصوت ---
                   raw_images = [os.path.join(RAW_DIR, f) for f in sorted(os.listdir(RAW_DIR)) if f.endswith(".jpg")]
                   
                   if not os.path.exists(PROCESSED_DIR):
@@ -190,8 +192,8 @@ jobs:
                   if not os.path.exists("font.ttf"):
                       with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
                   
-                  font_main = ImageFont.truetype("font.ttf", 45) # اسم المسلسل 
-                  font_sub = ImageFont.truetype("font.ttf", 60) # الموقع
+                  font_main = ImageFont.truetype("font.ttf", 45)
+                  font_sub = ImageFont.truetype("font.ttf", 60)
                   font_timer = ImageFont.truetype("font.ttf", 30)
 
                   num_total_frames = int(duration * TARGET_FPS)
@@ -212,14 +214,10 @@ jobs:
                       clean_title = fix_arabic(title)
                       clean_url = URL_TEXT
                       
-                      # 1. اسم المسلسل أعلى اليسار
                       draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
-                      
-                      # 2. الموقع في المنتصف
                       w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
                       draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
                       
-                      # 3. العداد الصغير أسفل الموقع
                       rem = max(0, int(duration) - (frame_num // TARGET_FPS))
                       timer_txt = f"00:{rem:02d}"
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
@@ -235,7 +233,7 @@ jobs:
                   )
                   subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                   
-                  # --- 5. الرفع الفوري إلى Catbox (أولاً) ---
+                  # --- 5. الرفع الفوري إلى Catbox (أولاً وقبل أي شيء) ---
                   try:
                       url = upload_to_catbox(final_p)
                       if "http" in url:
@@ -250,7 +248,7 @@ jobs:
                   upload_to_youtube(final_p, title)
 
               except Exception as e:
-                  log(f"❌ فشل إنشاء الفيديو: {e}")
+                  log(f"❌ فشل إنشاء الفيديو بالكامل: {e}")
               finally:
                   for f in [audio_p, INPUT_VIDEO, final_p]: 
                       if os.path.exists(f): os.remove(f)
