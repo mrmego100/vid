@@ -66,7 +66,6 @@ jobs:
             fi
 
             # 1. جلب بيانات القناة للتأكد من العنوان الحالي
-            # (نستخدم jq لتحليل الرد)
             CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
             CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title')
 
@@ -94,7 +93,9 @@ jobs:
                 echo "القناة $CHANNEL_ID عنوانها محدث بالفعل. لا داعي للتغيير."
             fi
             
-            sleep 2
+            # انتظار 30 ثانية بين كل قناة وأخرى
+            echo "انتظار 30 ثانية..."
+            sleep 30
           done
 
           echo "الانتهاء من تحديث العناوين. انتظار 5 ساعات ثانية..."
