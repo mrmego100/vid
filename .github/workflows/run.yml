@@ -2,7 +2,7 @@ name: Update Telegram Channels
 on:
   workflow_dispatch: 
   schedule:
-    - cron: '*/5 * * * *' # اختياري: يعمل كل 5 دقائق كاحتياط
+    - cron: '*/5 * * * *'
 
 jobs:
   run-task:
@@ -68,10 +68,14 @@ jobs:
             sleep 2
           done
 
-          echo "الانتهاء من تحديث العناوين. جاري تشغيل جلسة جديدة..."
+          # الانتظار 30 ثانية قبل تشغيل الجلسة الجديدة
+          echo "الانتهاء من تحديث العناوين. انتظار 30 ثانية..."
+          sleep 30
           
-          # أمر تشغيل الجلسة القادمة قبل انتهاء الحالية
+          echo "جاري تشغيل جلسة جديدة..."
+          
+          # تشغيل الجلسة الجديدة (run.yml)
           curl -X POST -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${GITHUB_WORKFLOW_REF##*/}/dispatches" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/run.yml/dispatches" \
           -d '{"ref":"main"}'
