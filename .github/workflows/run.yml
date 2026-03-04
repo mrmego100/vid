@@ -2,7 +2,7 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 * * * *" # بيشتغل كل ساعة
+    - cron: "0 * * * *" 
   workflow_dispatch:
 
 concurrency:
@@ -36,9 +36,9 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install google-generativeai edge-tts diffusers transformers accelerate arabic-reshaper python-bidi deep-translator pytrends opencv-python-headless pillow numpy requests nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib torch
+          pip install -U google-generativeai edge-tts diffusers transformers accelerate arabic-reshaper python-bidi deep-translator pytrends opencv-python-headless pillow numpy requests torch
 
-      - name: Run Integrated Script
+      - name: Run Production Script
         shell: python
         env:
           GEMINI_API_KEY: "AIzaSyBE81UIhl5pJbN6UwxoHMV3aXGPoHBSUNs"
@@ -72,22 +72,40 @@ jobs:
           def fix_ar(text):
               return get_display(reshape(text))
 
-          # تحميل الخط لضمان العربي
+          # تحميل الخط
           if not os.path.exists(FONT_PATH):
               r = requests.get("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf")
               with open(FONT_PATH, 'wb') as f: f.write(r.content)
 
-          # إعداد الذكاء الاصطناعي
+          # --- البحث التلقائي عن الموديل الشغال ---
           genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
-          model = genai.GenerativeModel('gemini-1.5-flash')
+          
+          def get_active_model():
+              log("🔍 فحص الموديلات المتاحة في حسابك...")
+              try:
+                  available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                  # محاولة اختيار Flash الأول، ثم Pro، ثم أول واحد متاح
+                  for target in ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']:
+                      if target in available_models:
+                          log(f"🎯 تم اختيار الموديل: {target}")
+                          return genai.GenerativeModel(target)
+                  log(f"⚠️ الموديل الافتراضي غير موجود، سأستخدم: {available_models[0]}")
+                  return genai.GenerativeModel(available_models[0])
+              except Exception as e:
+                  log(f"❌ فشل العثور على أي موديل: {e}")
+                  sys.exit(0)
+
+          model = get_active_model()
 
           def generate_story(title):
+              log(f"🧠 جاري كتابة القصة لـ: {title}")
               prompt = f"اكتب قصة واقعية مشوقة عن '{title}' بالعربية الفصحى، بين 100 لـ 150 كلمة. ابدأ السرد مباشرة."
               try:
                   res = model.generate_content(prompt)
-                  return res.text.strip() if res.text else None
+                  if res.text: return res.text.strip()
+                  raise Exception("Empty response")
               except Exception as e:
-                  log(f"Error Gemini: {e}")
+                  log(f"❌ خطأ Gemini: {e}")
                   return None
 
           def add_overlays(img_path, title_ar):
@@ -100,21 +118,21 @@ jobs:
               except:
                   font_t = font_s = ImageFont.load_default()
 
-              # 1. العنوان (خلفية على قد النص)
+              # العنوان - خلفية على قد النص فقط
               txt_t = fix_ar(title_ar)
               bbox_t = draw.textbbox((30, 30), txt_t, font=font_t)
               draw.rectangle([bbox_t[0]-10, bbox_t[1]-5, bbox_t[2]+10, bbox_t[3]+5], fill=(0,0,0,230))
               draw.text((30, 30), txt_t, fill="white", font=font_t)
 
-              # 2. شاهد من هنا
+              # شاهد من هنا - خلفية على قد النص
               line1 = fix_ar(".. شاهد من هنا ..")
               bbox1 = draw.textbbox((0, 0), line1, font=font_s)
               w1, h1 = bbox1[2]-bbox1[0], bbox1[3]-bbox1[1]
-              x1, y1 = (w - w1) // 2, h - 130
+              x1, y1 = (w - w1) // 2, h - 140
               draw.rectangle([x1-15, y1-5, x1+w1+15, y1+h1+5], fill=(0,0,0,230))
               draw.text((x1, y1), line1, fill="white", font=font_s)
 
-              # 3. الموقع
+              # الموقع - خلفية على قد النص
               line2 = MY_SITE
               bbox2 = draw.textbbox((0, 0), line2, font=font_s)
               w2, h2 = bbox2[2]-bbox2[0], bbox2[3]-bbox2[1]
@@ -125,32 +143,31 @@ jobs:
               img.convert("RGB").save(img_path, quality=95)
 
           async def main():
-              log("🚀 البحث عن تريند...")
+              log("🚀 البحث عن تريند جديد...")
               pytrends = TrendReq(hl='ar', tz=0)
               try:
                   pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
                   df = pytrends.related_queries()['مدبلج']['top']
-                  if df is None: 
-                      log("⚠️ لا توجد بيانات. خروج.")
+                  if df is None:
+                      log("⚠️ لا توجد تريندات حالياً.")
                       return
-                  
+
                   used = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
                   new_trends = [w for w in df['query'].tolist() if w not in used]
                   
                   if not new_trends:
-                      log("⚠️ لا توجد تريندات جديدة. خروج.")
+                      log("⚠️ تم استهلاك جميع التريندات المتاحة.")
                       return
                   
                   title = new_trends[0]
-                  log(f"✅ تريند جديد: {title}")
+                  log(f"✅ التريند المستهدف: {title}")
               except:
-                  log("❌ فشل الاتصال بـ Google Trends.")
+                  log("❌ فشل الاتصال بخدمة التريندات.")
                   return
 
               story = generate_story(title)
               if not story: return
 
-              # تنظيف
               for p in ["frames", "clips"]:
                   if os.path.exists(p): shutil.rmtree(p)
                   os.makedirs(p)
@@ -161,26 +178,25 @@ jobs:
               res = subprocess.run(f'ffprobe -i {audio_p} -show_entries format=duration -v quiet -of csv="p=0"', shell=True, capture_output=True, text=True)
               duration = int(float(res.stdout.strip()))
 
-              # رسم الصور (Stable Diffusion Turbo للسرعة)
+              # توليد الصور (SD Turbo)
               eng_t = GoogleTranslator(source='ar', target='en').translate(title)
-              log("🎨 جاري توليد الصور...")
+              log("🎨 جاري رسم الصور...")
               pipe = StableDiffusionPipeline.from_pretrained("stabilityai/sd-turbo", torch_dtype=torch.float16, variant="fp16").to("cuda")
               
               img_dur = 6
               num_imgs = (duration // img_dur) + 1
               
               for i in range(num_imgs):
-                  log(f"🖼️ معالجة اللقطة {i+1}")
-                  img = pipe(prompt=f"Cinematic realistic scene of {eng_t}, high quality, no text", num_inference_steps=2).images[0]
+                  log(f"🖼️ لقطة {i+1}/{num_imgs}")
+                  img = pipe(prompt=f"Cinematic wide shot of {eng_t}, high quality, realistic, masterpiece", num_inference_steps=2).images[0]
                   f_p = f"frames/f_{i:03d}.jpg"
                   img.resize((1280, 720)).save(f_p)
                   add_overlays(f_p, title)
                   
                   c_p = f"clips/c_{i:03d}.mp4"
-                  # فيديو ثابت بدون زووم
+                  # فيديو ثابت تماماً (بدون زووم)
                   subprocess.run(f"ffmpeg -y -loop 1 -i {f_p} -c:v libx264 -t {img_dur} -pix_fmt yuv420p -r 25 -preset ultrafast {c_p}", shell=True, capture_output=True)
 
-              # دمج
               with open("list.txt", "w") as f:
                   for i in range(num_imgs): f.write(f"file 'clips/c_{i:03d}.mp4'\n")
               
@@ -190,10 +206,10 @@ jobs:
               if os.path.exists(final_v):
                   # رفع Catbox
                   with open(final_v, "rb") as f:
-                      cat_url = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f}).text.strip()
-                  log(f"🔗 رابط Catbox: {cat_url}")
+                      url = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f}).text.strip()
+                  log(f"🔗 الرابط المباشر: {url}")
 
-                  # رفع YouTube (إذا توفرت البيانات)
+                  # رفع يوتيوب
                   creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
                   if creds_json:
                       try:
@@ -201,16 +217,16 @@ jobs:
                           credentials = Credentials.from_authorized_user_info(creds_dict)
                           youtube = build('youtube', 'v3', credentials=credentials)
                           body = {
-                              "snippet": {"title": f"{title} | مدبلج حصري", "description": f"شاهد الان {title} مدبلج.\nالموقع: {MY_SITE}", "categoryId": "24"},
+                              "snippet": {"title": f"{title} | مسلسل مدبلج", "description": f"شاهد الان {title} مدبلج.\nالموقع: {MY_SITE}", "categoryId": "24"},
                               "status": {"privacyStatus": "public"}
                           }
                           media = MediaFileUpload(final_v, chunksize=-1, resumable=True)
                           youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
-                          log("✅ تم الرفع ليوتيوب!")
-                      except Exception as e: log(f"⚠️ فشل يوتيوب: {e}")
+                          log("✅ تم الرفع لليوتيوب.")
+                      except Exception as e: log(f"⚠️ خطأ يوتيوب: {e}")
 
                   with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(title + "\n")
-                  log("✨ تمت العملية بنجاح!")
+                  log("🧹 تنظيف الملفات...")
 
           if __name__ == "__main__":
               asyncio.run(main())
@@ -224,7 +240,7 @@ jobs:
           git commit -m "Update history [skip ci]" || echo "No changes"
           git push || echo "Push failed"
 
-      - name: ⏳ Re-trigger Workflow
+      - name: ⏳ Wait and Re-trigger
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
