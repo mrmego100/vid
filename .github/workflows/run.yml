@@ -1,4 +1,4 @@
-name: Generator
+name: Continuous Video Generator
 
 on:
   schedule:
@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: video-generator-group
-  cancel-in-progress: false
+  cancel-in-progress: false  
 
 jobs:
   build:
@@ -69,10 +69,10 @@ jobs:
           current_date_str = now.strftime("%Y-%m-%d")
 
           PRE_TEXT = "أهلا بكل متابعينا. موضوع الفيديو اليوم عن المسلسل الشهير وهو"
-          POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو.
-          لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة.
-          أو قم بالدخول على الموقع المعروض أمامك باللون الأصفر.
-          تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}.
+          POST_TEXT = f""" . إذا رغبت في مشاهدة المسلسل كامل ومدبلج. فابقَ معنا حتى نهاية الفيديو.  
+          لأوفر لك رابط قناة التيلجرام التي تحتوى على جميع أجزاء المسلسل كاملة.  
+          أو قم بالدخول على الموقع المعروض أمامك باللون الأصفر.  
+          تسجيلنا الحالي في تمام الساعة {current_time_str} بتاريخ {current_date_str}.  
           آراكم في فيديو آخر."""
 
           def fix_arabic(text):
@@ -119,8 +119,7 @@ jobs:
                   duration_rounded = int(np.ceil(duration))
 
                   if not os.path.exists("font.ttf"):
-                      with open("font.ttf", "wb") as f:
-                          f.write(requests.get(FONT_URL).content)
+                      with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
 
                   fps, size = 24, (1280, 720)
                   out = cv2.VideoWriter(video_p, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
@@ -135,20 +134,16 @@ jobs:
                       clean_title = fix_arabic(title)
                       rem = max(0, duration_rounded - (frame_num // fps))
                       timer_txt = f"00:{rem:02d}"
-
                       w1, h1 = draw.textbbox((0, 0), clean_title, font=font_main)[2:]
                       w2, h2 = draw.textbbox((0, 0), URL_TEXT, font=font_sub)[2:]
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
-
                       curr_y = 300
                       draw.text(((1280-w1)/2, curr_y), clean_title, font=font_main, fill=(255, 255, 255))
                       curr_y += h1 + 10
                       draw.text(((1280-w2)/2, curr_y), URL_TEXT, font=font_sub, fill=(255, 237, 0))
                       curr_y += h2 + 10
                       draw.text(((1280-w3)/2, curr_y), timer_txt, font=font_timer, fill=(0, 255, 0))
-
                       out.write(cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR))
-
                   out.release()
 
                   os.system(f"ffmpeg -i {video_p} -i {audio_p} -c:v libx264 -c:a aac -shortest {final_p} -y -loglevel quiet")
@@ -158,8 +153,7 @@ jobs:
                   log(f"❌ فشل إنشاء الفيديو: {e}")
               finally:
                   for f in [audio_p, video_p, final_p]:
-                      if os.path.exists(f):
-                          os.remove(f)
+                      if os.path.exists(f): os.remove(f)
 
           async def main():
               log("🚀 بدأت الجلسة - جاري البحث...")
@@ -167,20 +161,17 @@ jobs:
               excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة", "كوري", "الذئاب", "باكستاني", "افلام", "حلقه", "حلقة","ديزنى"]
 
               try:
-                  pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
+                  # ✅ التعديل الوحيد هنا
+                  pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='')
                   results = pytrends.related_queries()
                   used = []
-
                   if os.path.exists(HISTORY_FILE):
                       with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                           used = f.read().splitlines()
 
                   if 'مدبلج' in results and results['مدبلج']['top'] is not None:
                       df_top = results['مدبلج']['top']
-                      new_titles = [w for w in df_top['query'].tolist()
-                                    if "مدبلج" in w and len(w) >= 20
-                                    and w not in used
-                                    and not any(word in w for word in excluded_words)]
+                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 20 and w not in used and not any(word in w for word in excluded_words)]
 
                       if new_titles:
                           q = new_titles[0]
@@ -188,35 +179,13 @@ jobs:
                           await create_video(q, int(time.time()))
                           with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                               f.write(q + "\n")
-
-                          log("⏳ تم الرفع. انتظار 1 دقيقة داخل السكربت...")
                           await asyncio.sleep(60)
                       else:
                           log("⚠️ لا توجد تريندات جديدة.")
                   else:
                       log("⚠️ لا توجد بيانات بحثية.")
-
               except Exception as e:
                   log(f"⚠️ خطأ: {e}")
 
           if __name__ == "__main__":
               asyncio.run(main())
-
-      - name: Save Progress
-        if: always()
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add history.txt || echo "No history"
-          git commit -m "Update history [skip ci]" || echo "No changes"
-          git push || echo "Push failed"
-
-      - name: ⏳ Final Wait & Trigger
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "الانتظار لمدة 60 ثانية إضافية قبل إطلاق الجلسة الجديدة..."
-          sleep 7000
-          gh workflow run "Generator" --repo ${{ github.repository }}
-          echo "🚀 تم إرسال أمر بدء الجلسة التلقائية القادمة."
