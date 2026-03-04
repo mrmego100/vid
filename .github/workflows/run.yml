@@ -1,63 +1,62 @@
-name: Telegram Dynamic Channel Name
-
-on:
-  workflow_dispatch: 
-
-jobs:
-  dynamic-channel-name:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write  
-    steps:
-      # هذه هي الخطوة التي كانت مفقودة!
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: 🧹 Delete Old Workflow Runs
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 2
-
-      - name: Run Task and Re-queue
+- name: Run Task and Re-queue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           #!/bin/bash
 
+          BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
+
+          # ========================================================
+          # القنوات (كل قناة تأخذ 3 أسطر)
+          # ========================================================
+          CHANNELS=(
+            "@M015_1_6_7_8_9_10_11_12_13_14_15"
+            "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش + افراج الحلقة الحلقه 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
+            "مسلسل اليوم الحلقة كاملة _ الحلقه الان _ المل_فن_أصحا_المصيد_در_افرا"
+            
+            "@M016_1_6_7_8_9_10_11_12_13_14_15"
+            "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة 2"
+            "الاسم الليلي 2"
+
+            "@M017_1_6_7_8_9_10_11_12_13_14_15"
+            "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة 3"
+            "الاسم الليلي 3"
+          )
+          # ========================================================
+
           echo "بدء العملية: $(date)"
 
-          # ----------- 1. الإعدادات -----------
-          BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
-          CHANNEL_ID="@M015_1_6_7_8_9_10_11_12_13_14_15"
+          # حلقة التكرار تقفز 3 خطوات في كل مرة (i+=3)
+          for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
+            CHANNEL_ID="${CHANNELS[i]}"
+            DAY_NAME="${CHANNELS[i+1]}"
+            NIGHT_NAME="${CHANNELS[i+2]}"
 
-          HOUR=$(date +'%H')
-          if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
-            EPISODES="1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
-            NAME="مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش الحلقة الحلقه $EPISODES"
-          else
-            NAME="مسلسل اليوم"
-          fi
+            # تحديد الاسم حسب الوقت
+            HOUR=$(date +'%H')
+            if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
+              TARGET_NAME="$DAY_NAME"
+            else
+              TARGET_NAME="$NIGHT_NAME"
+            fi
 
-          # ----------- 2. التحقق -----------
-          echo "جاري فحص الاسم الحالي..."
-          CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
-          CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title // empty')
+            # التحقق والتحديث
+            echo "معالجة القناة: $CHANNEL_ID"
+            CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
+            CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title // empty')
 
-          if [ "$CURRENT_TITLE" == "$NAME" ]; then
-            echo "الاسم مطابق بالفعل. لا حاجة للتحديث."
-          else
-            echo "الاسم يحتاج تحديث. جاري التغيير..."
-            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
-                 -d chat_id="$CHANNEL_ID" \
-                 -d title="$NAME"
-          fi
+            if [ "$CURRENT_TITLE" == "$TARGET_NAME" ]; then
+              echo "الاسم مطابق بالفعل."
+            else
+              echo "جاري التغيير إلى: $TARGET_NAME"
+              curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                   -d chat_id="$CHANNEL_ID" \
+                   -d title="$TARGET_NAME"
+            fi
+            sleep 2
+          done
 
-          # ----------- 3. إعادة التشغيل -----------
+          # إعادة التشغيل
           echo "الانتظار لمدة دقيقة..."
           sleep 60
-          echo "إعادة تشغيل Workflow..."
-          gh workflow run run.yml
+          gh workflow run "$GITHUB_WORKFLOW"
