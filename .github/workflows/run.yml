@@ -35,9 +35,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg nodejs
+          sudo apt-get update && sudo apt-get install -y ffmpeg nodejs git
           pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
-          pip install -U --pre yt-dlp
+          pip install -U git+https://github.com/yt-dlp/yt-dlp.git@master
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Create and Run Script
@@ -136,15 +136,14 @@ jobs:
                   # --- 2. تحميل الفيديو من يوتيوب ---
                   log("🚀 جاري تحميل الفيديو...")
                   
-                  # الحل الجذري لتخطي حظر البوتات في سيرفرات جيت هاب
                   ydl_opts = {
                       'format': 'best[height<=720][ext=mp4]',
                       'outtmpl': INPUT_VIDEO,
                       'quiet': True,
                       'no_warnings': True,
                       'default_search': 'ytsearch1',
-                      'source_address': '0.0.0.0', # إجبار استخدام IPv4 لتخطي حظر يوتيوب
-                      'extractor_args': {'youtube': ['player_client=android']}
+                      'geo_bypass': True,
+                      'extractor_args': {'youtube': ['player_client=ios,android,web']}
                   }
 
                   with YoutubeDL(ydl_opts) as ydl:
@@ -170,7 +169,6 @@ jobs:
                   while success:
                       if count % hop == 0:
                           # منطق الحذف: إذا كان رقم الصورة المستخرجة يقبل القسمة على 5، لا نحفظها
-                          # (extracted_count + 1) لتبدأ الحسبة من 1، فكل صورة رقم 5، 10، 15 تُحذف
                           extracted_count += 1
                           if extracted_count % 5 != 0:
                               cv2.imwrite(f"{RAW_DIR}/f_{saved_count:05d}.jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -192,20 +190,18 @@ jobs:
                   if not os.path.exists("font.ttf"):
                       with open("font.ttf", "wb") as f: f.write(requests.get(FONT_URL).content)
                   
-                  font_main = ImageFont.truetype("font.ttf", 45) # اسم المسلسل (أصغر قليلاً ليناسب الزاوية)
+                  font_main = ImageFont.truetype("font.ttf", 45) # اسم المسلسل 
                   font_sub = ImageFont.truetype("font.ttf", 60) # الموقع
                   font_timer = ImageFont.truetype("font.ttf", 30)
 
                   num_total_frames = int(duration * TARGET_FPS)
                   
                   for frame_num in range(num_total_frames):
-                      # اختيار الصورة بناءً على الوقت (تتغير كل 3 ثواني)
                       if raw_images:
                           img_idx = (frame_num // (TARGET_FPS * 3)) % len(raw_images)
                           img = cv2.imread(raw_images[img_idx])
                           img = cv2.resize(img, (1280, 720))
                           img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                          # إضافة تعتيم خفيف للخلفية لجعل النص واضحاً
                           img = cv2.addWeighted(img, 0.6, np.zeros(img.shape, img.dtype), 0, 0)
                       else:
                           img = np.zeros((720, 1280, 3), np.uint8)
@@ -219,7 +215,7 @@ jobs:
                       # 1. اسم المسلسل أعلى اليسار
                       draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
                       
-                      # 2. الموقع في المنتصف (مكان الترجمة)
+                      # 2. الموقع في المنتصف
                       w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
                       draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
                       
@@ -229,7 +225,6 @@ jobs:
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
                       draw.text(((1280-w3)/2, 670), timer_txt, font=font_timer, fill=(0, 255, 0))
 
-                      # حفظ الإطار المعدل ليقرأه ffmpeg
                       cv2.imwrite(f"{PROCESSED_DIR}/f_{frame_num:05d}.jpg", cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
 
                   # --- 4. إنشاء الفيديو باستخدام FFmpeg ---
@@ -240,18 +235,19 @@ jobs:
                   )
                   subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                   
-                  upload_to_youtube(final_p, title)
-
-                  # --- 5. الرفع الفوري للفيديو الناتج إلى Catbox ---
+                  # --- 5. الرفع الفوري إلى Catbox (أولاً) ---
                   try:
                       url = upload_to_catbox(final_p)
                       if "http" in url:
-                          log(f"✅ انتهى بنجاح!")
-                          log(f"🔗 رابط الفيديو الجديد ({TARGET_FPS}fps): {url}")
+                          log(f"✅ تم الرفع لـ Catbox بنجاح!")
+                          log(f"🔗 الرابط: {url}")
                       else:
-                          log(f"❌ خطأ من الموقع: {url}")
+                          log(f"❌ خطأ من Catbox: {url}")
                   except Exception as e:
-                      log(f"❌ حدث خطأ أثناء الرفع: {e}")
+                      log(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
+
+                  # --- 6. الرفع إلى YouTube (ثانياً) ---
+                  upload_to_youtube(final_p, title)
 
               except Exception as e:
                   log(f"❌ فشل إنشاء الفيديو: {e}")
