@@ -1,24 +1,23 @@
 name: Update Telegram Channels
 on:
-  schedule:
-    - cron: '* * * * *' # سيعمل هذا السكربت تلقائياً كل دقيقة
-  workflow_dispatch: # للسماح لك بتشغيله يدوياً من واجهة GitHub عند الحاجة
+  workflow_dispatch: # للتشغيل اليدوي الأولي فقط
 
 jobs:
   run-task:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write
+      actions: write # هذا الإذن ضروري جداً لتشغيل الـ workflow من جديد
     steps:
       - name: Update Titles
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           #!/bin/bash
-
+          
           # ========================================================
-          # القنوات (كل قناة تأخذ 3 أسطر)
+          # القنوات
           # ========================================================
           CHANNELS=(
             "@M015_1_6_7_8_9_10_11_12_13_14_15"
@@ -42,7 +41,6 @@ jobs:
             DAY_NAME="${CHANNELS[i+1]}"
             NIGHT_NAME="${CHANNELS[i+2]}"
 
-            # تحديد الاسم حسب الوقت
             HOUR=$(date +'%H')
             if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
               TARGET_NAME="$DAY_NAME"
@@ -50,20 +48,20 @@ jobs:
               TARGET_NAME="$NIGHT_NAME"
             fi
 
-            echo "معالجة القناة: $CHANNEL_ID"
+            echo "محاولة معالجة القناة: $CHANNEL_ID"
             
             # التحقق والتحديث
-            CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
-            CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title // empty')
-
-            if [ "$CURRENT_TITLE" == "$TARGET_NAME" ]; then
-              echo "الاسم مطابق بالفعل."
-            else
-              echo "جاري التغيير إلى: $TARGET_NAME"
-              curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
-                   -d chat_id="$CHANNEL_ID" \
-                   -d title="$TARGET_NAME"
-            fi
+            RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                 -d chat_id="$CHANNEL_ID" \
+                 -d title="$TARGET_NAME")
+            
+            # طباعة الرد للتصحيح
+            echo "رد التليجرام: $RESPONSE"
+            
             sleep 2
           done
-          echo "تمت المهمة بنجاح."
+
+          # إعادة التشغيل بعد دقيقة
+          echo "الانتظار لمدة دقيقة ثم إعادة التشغيل..."
+          sleep 60
+          gh workflow run "$GITHUB_WORKFLOW"
