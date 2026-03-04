@@ -24,7 +24,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           # تأكد أن هذا الرقم يبدأ بـ -100 (مثلاً: -100123456789)
-          PRIVATE_CHANNEL_ID: "-1003798623046" 
+          PRIVATE_CHANNEL_ID: "-1003731241901" 
         run: |
           #!/bin/bash
           
