@@ -1,187 +1,42 @@
-name: Mego Video Generator Pro
+name: Telegram Dynamic Channel Name
 
 on:
-  workflow_dispatch: # تشغيل يدوي
   schedule:
-    - cron: '0 */6 * * *' # يشتغل تلقائياً كل 6 ساعات
+    - cron: '0 * * * *'  # كل ساعة
+  workflow_dispatch:    # لتشغيله يدويًا
 
 jobs:
-  build-and-run:
+  dynamic-channel-name:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install System Dependencies
+      - name: Update Telegram Channel Name Dynamically
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg libsm6 libxext6
+          #!/bin/bash
 
-      - name: Install Python Libraries
-        run: |
-          pip install -U google-generativeai edge-tts diffusers transformers accelerate \
-          arabic-reshaper python-bidi deep-translator pytrends opencv-python-headless \
-          torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu -q
+          echo "بدء العملية: $(date)"
 
-      - name: Create Python Script
-        run: |
-          cat << 'EOF' > mego_script.py
-          import os, shutil, asyncio, subprocess, requests, cv2, numpy as np, random, urllib.parse, time, datetime, sys
-          import torch
-          import google.generativeai as genai
-          import edge_tts
-          from diffusers import StableDiffusionPipeline
-          from PIL import Image, ImageDraw, ImageFont
-          from arabic_reshaper import reshape
-          from bidi.algorithm import get_display
-          from deep_translator import GoogleTranslator
-          from pytrends.request import TrendReq
+          # التوكن والـ Channel ID
+          BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
+          CHANNEL_ID="@YourChannelUsername"  # ضع هنا اسم قناتك أو معرفها -1001234567890
 
-          # --- الإعدادات ---
-          GEMINI_API_KEY = "AIzaSyBE81UIhl5pJbN6UwxoHMV3aXGPoHBSUNs" 
-          VOICE = "ar-SA-ZariyahNeural"
-          URL_TEXT = "www.mshort.do.am"
-          HISTORY_FILE = "history.txt"
-          TARGET_FPS = 10
-          FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
-          FONT_PATH = "Amiri-Regular.ttf"
+          # الساعة الحالية
+          HOUR=$(date +'%H')
 
-          if not os.path.exists(FONT_PATH):
-              r = requests.get(FONT_URL)
-              with open(FONT_PATH, 'wb') as f: f.write(r.content)
+          # تحديد اسم القناة حسب الوقت
+          if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
+            EPISODES="1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
+            NAME="مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش الحلقة الحلقه $EPISODES"
+          else
+            NAME="مسلسل اليوم"
+          fi
 
-          def log(msg):
-              print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
-              sys.stdout.flush()
+          # إرسال طلب لتغيير اسم القناة
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+               -d chat_id="$CHANNEL_ID" \
+               -d title="$NAME")
 
-          def fix_arabic(text):
-              reshaped_text = reshape(text)
-              return get_display(reshaped_text)
+          echo "تم تغيير اسم القناة إلى: $NAME"
+          echo "رد Telegram: $RESPONSE"
 
-          genai.configure(api_key=GEMINI_API_KEY)
-          model = genai.GenerativeModel('gemini-1.5-flash')
-
-          def get_trend():
-              log("🚀 جاري صيد التريند...")
-              pytrends = TrendReq(hl='ar', tz=0)
-              excluded_words = ["ديزني", "افلام", "فيلم", "فلم","هندى", "هندي", "صينى", "صيني","تركى", "تركي", "الحلقه", "الحلقة", "كوري", "الذئاب", "باكستاني", "حلقه", "حلقة","ديزنى"]
-              try:
-                  pytrends.build_payload(["مدبلج"], timeframe='now 4-H', gprop='youtube')
-                  results = pytrends.related_queries()
-                  if 'مدبلج' in results and results['مدبلج']['top'] is not None:
-                      df_top = results['مدبلج']['top']
-                      used = []
-                      if os.path.exists(HISTORY_FILE):
-                          with open(HISTORY_FILE, "r", encoding="utf-8") as f: used = f.read().splitlines()
-                      new_titles = [w for w in df_top['query'].tolist() if "مدبلج" in w and len(w) >= 15 and w not in used and not any(word in w for word in excluded_words)]
-                      if new_titles:
-                          title = new_titles[0]
-                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(title + "\n")
-                          return title
-              except Exception as e:
-                  log(f"⚠️ خطأ في التريند: {e}")
-              return None
-
-          async def generate_audio_content(title):
-              now = datetime.datetime.now()
-              current_time_str = now.strftime("%I:%M %p")
-              current_date_str = now.strftime("%Y-%m-%d")
-              full_speech = f"أهلا بكل متابعينا. موضوع الفيديو اليوم عن {title}. لمشاهدة المسلسل كامل ومدبلج، زر الموقع المعروض باللون الأصفر. تسجيلنا في {current_time_str} بتاريخ {current_date_str}."
-              await edge_tts.Communicate(full_speech, VOICE).save("audio.mp3")
-              res = subprocess.run('ffprobe -i audio.mp3 -show_entries format=duration -v quiet -of csv="p=0"', shell=True, capture_output=True, text=True)
-              return float(res.stdout.strip())
-
-          def add_overlays(img_path, title_ar):
-              img = Image.open(img_path).convert("RGBA")
-              draw = ImageDraw.Draw(img)
-              w, h = img.size
-              try:
-                  font_main = ImageFont.truetype(FONT_PATH, 45)
-                  font_sub = ImageFont.truetype(FONT_PATH, 55)
-              except:
-                  font_main = font_sub = ImageFont.load_default()
-
-              clean_title = fix_arabic(title_ar)
-              t_bbox = draw.textbbox((30, 30), clean_title, font=font_main)
-              draw.rectangle([t_bbox[0]-10, t_bbox[1]-5, t_bbox[2]+10, t_bbox[3]+10], fill=(0,0,0,230))
-              draw.text((30, 30), clean_title, fill="white", font=font_main)
-
-              line1 = fix_arabic(".. شاهد من هنا ..")
-              b1 = draw.textbbox((0,0), line1, font=font_main)
-              w1 = b1[2]-b1[0]
-              x1, y1 = (w-w1)//2, h-180
-              draw.rectangle([x1-15, y1-5, x1+w1+15, y1+(b1[3]-b1[1])+10], fill=(0,0,0,230))
-              draw.text((x1, y1), line1, fill="white", font=font_main)
-
-              line2 = URL_TEXT
-              b2 = draw.textbbox((0,0), line2, font=font_sub)
-              w2 = b2[2]-b2[0]
-              x2, y2 = (w-w2)//2, h-100
-              draw.rectangle([x2-15, y2-5, x2+w2+15, y2+(b2[3]-b2[1])+10], fill=(0,0,0,230))
-              draw.text((x2, y2), line2, fill="#FFED00", font=font_sub)
-              img.convert("RGB").save(img_path, quality=95)
-
-          async def main_process():
-              title = get_trend()
-              if not title:
-                  log("⚠️ لا توجد تريندات جديدة.")
-                  return
-
-              for p in ["frames", "clips"]:
-                  if os.path.exists(p): shutil.rmtree(p)
-                  os.makedirs(p, exist_ok=True)
-
-              duration = await generate_audio_content(title)
-              log(f"🎬 مدة الفيديو: {duration} ثانية")
-
-              log("🎨 جاري تحميل محرك الصور (CPU mode)...")
-              eng_t = GoogleTranslator(source='ar', target='en').translate(title)
-              # تعديل للعمل على الـ CPU الخاص بجيت هاب
-              pipe = StableDiffusionPipeline.from_pretrained("stabilityai/sd-turbo", torch_dtype=torch.float32).to("cpu")
-
-              img_dur = 5 
-              num_segments = int(duration // img_dur) + 1
-              
-              for i in range(num_segments):
-                  log(f"🖼️ توليد صورة {i+1}/{num_segments}")
-                  gen = torch.Generator("cpu").manual_seed(random.randint(0, 999999))
-                  # تقليل خطوات التوليد لسرعة الـ CPU
-                  current_img = pipe(prompt=f"Cinematic {eng_t}, high quality, drama", num_inference_steps=1, generator=gen).images[0]
-                  current_img = current_img.resize((1280, 720))
-                  f_p = f"frames/f_{i:03d}.jpg"
-                  current_img.save(f_p)
-                  add_overlays(f_p, title)
-                  c_p = f"clips/c_{i:03d}.mp4"
-                  subprocess.run(f"ffmpeg -y -loop 1 -i {f_p} -c:v libx264 -t {img_dur} -pix_fmt yuv420p -r 25 -preset ultrafast {c_p}", shell=True, capture_output=True)
-
-              with open("list.txt", "w") as f:
-                  for i in range(num_segments): f.write(f"file 'clips/c_{i:03d}.mp4'\n")
-              
-              final_v = "video_final.mp4"
-              subprocess.run(f"ffmpeg -y -f concat -safe 0 -i list.txt -i audio.mp3 -c:v libx264 -preset ultrafast -c:a aac -shortest -r {TARGET_FPS} {final_v}", shell=True)
-
-              if os.path.exists(final_v):
-                  log("🚀 جاري الرفع...")
-                  with open(final_v, "rb") as f:
-                      url = requests.post("https://catbox.moe/user/api.php", data={"reqtype":"fileupload"}, files={"fileToUpload":f}).text.strip()
-                  print(f"\n✅ الفيديو جاهز: {url}\n")
-
-          if __name__ == "__main__":
-              asyncio.run(main_process())
-          EOF
-
-      - name: Run Mego Generator
-        run: python mego_script.py
-
-      - name: Save History
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add history.txt || true
-          git commit -m "Update trend history [skip ci]" || true
-          git push || true
+          # حفظ سجل الجلسة الجديدة
+          echo "$(date) - اسم القناة: $NAME" >> sessions.log
