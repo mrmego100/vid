@@ -37,7 +37,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg nodejs git
           pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
-          pip install -U git+https://github.com/yt-dlp/yt-dlp.git@master
+          pip install duckduckgo-search
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Create and Run Script
@@ -53,7 +53,7 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
-          from yt_dlp import YoutubeDL
+          from duckduckgo_search import DDGS
 
           nest_asyncio.apply()
 
@@ -65,8 +65,6 @@ jobs:
           URL_TEXT = "www.mshort.do.am"
           FONT_URL = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
           HISTORY_FILE = "history.txt"
-          INPUT_VIDEO = "downloaded_video.mp4"
-          RAW_DIR = "raw_frames"
           PROCESSED_DIR = "processed_frames"
           TARGET_FPS = 10
 
@@ -123,6 +121,24 @@ jobs:
                   response = requests.post("https://catbox.moe/user/api.php", data=data, files=files)
                   return response.text.strip()
 
+          def download_image(query):
+              log(f"🔍 جاري البحث عن صورة للمسلسل: {query}")
+              img_path = "downloaded_bg.jpg"
+              try:
+                  with DDGS() as ddgs:
+                      results = list(ddgs.images(query, max_results=1))
+                      if results:
+                          img_url = results[0]['image']
+                          log(f"🔗 جاري تحميل الصورة: {img_url}")
+                          response = requests.get(img_url, timeout=10)
+                          if response.status_code == 200:
+                              with open(img_path, 'wb') as f:
+                                  f.write(response.content)
+                              return img_path
+              except Exception as e:
+                  log(f"⚠️ فشل البحث أو تحميل الصورة: {e}")
+              return None
+
           async def create_video(title, index):
               audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
               try:
@@ -133,56 +149,8 @@ jobs:
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   
-                  # --- 2. تحميل الفيديو من يوتيوب (محمي بـ Try/Except لضمان استمرار السكربت) ---
-                  log("🚀 جاري تحميل الفيديو من يوتيوب...")
-                  try:
-                      ydl_opts = {
-                          'format': 'best[height<=720][ext=mp4]',
-                          'outtmpl': INPUT_VIDEO,
-                          'quiet': True,
-                          'no_warnings': True,
-                          'default_search': 'ytsearch1',
-                          'geo_bypass': True,
-                          'extractor_args': {'youtube': ['player_client=ios,android']}
-                      }
-                      with YoutubeDL(ydl_opts) as ydl:
-                          ydl.download([title])
-                  except Exception as yt_error:
-                      log(f"⚠️ يوتيوب قام بحظر التحميل. سيتم إنشاء الفيديو بدون خلفية متحركة لضمان خروجه للنور. (الخطأ: تم التخطي)")
-
-                  # --- 3. تقطيع الفيديو وحفظ الإطارات مع حذف صورة كل 5 صور ---
-                  if not os.path.exists(RAW_DIR):
-                      os.makedirs(RAW_DIR)
-                  else:
-                      for f in os.listdir(RAW_DIR): os.remove(os.path.join(RAW_DIR, f))
-
-                  saved_count = 0
-                  if os.path.exists(INPUT_VIDEO):
-                      log(f"📸 جاري التقطيع (تخطي صورة كل 5 صور)...")
-                      vidcap = cv2.VideoCapture(INPUT_VIDEO)
-                      fps_orig = vidcap.get(cv2.CAP_PROP_FPS)
-                      if fps_orig == 0: fps_orig = 30 
-                      hop = max(1, round(fps_orig / TARGET_FPS))
-
-                      count = 0
-                      extracted_count = 0
-                      success, image = vidcap.read()
-
-                      while success:
-                          if count % hop == 0:
-                              extracted_count += 1
-                              if extracted_count % 5 != 0:
-                                  cv2.imwrite(f"{RAW_DIR}/f_{saved_count:05d}.jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                                  saved_count += 1
-                          success, image = vidcap.read()
-                          count += 1
-                      vidcap.release()
-                      log(f"✅ تم استخراج وحفظ {saved_count} صورة.")
-                  else:
-                      log("ℹ️ لا يوجد فيديو للتقطيع، سيتم استخدام خلفية سوداء احتياطية.")
-
-                  # --- تجهيز الإطارات لتتوافق مع طول الصوت ---
-                  raw_images = [os.path.join(RAW_DIR, f) for f in sorted(os.listdir(RAW_DIR)) if f.endswith(".jpg")]
+                  # --- 2. تحميل صورة واحدة للعنوان ---
+                  bg_path = download_image(title)
                   
                   if not os.path.exists(PROCESSED_DIR):
                       os.makedirs(PROCESSED_DIR)
@@ -196,28 +164,35 @@ jobs:
                   font_sub = ImageFont.truetype("font.ttf", 60)
                   font_timer = ImageFont.truetype("font.ttf", 30)
 
+                  # تجهيز الصورة الأساسية
+                  if bg_path and os.path.exists(bg_path):
+                      base_img = cv2.imread(bg_path)
+                      base_img = cv2.resize(base_img, (1280, 720))
+                      base_img = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
+                      # تعتيم الصورة بنسبة 60% ليظهر النص
+                      base_img = cv2.addWeighted(base_img, 0.6, np.zeros(base_img.shape, base_img.dtype), 0, 0)
+                  else:
+                      log("ℹ️ لم يتم العثور على صورة، سيتم استخدام خلفية سوداء.")
+                      base_img = np.zeros((720, 1280, 3), np.uint8)
+
                   num_total_frames = int(duration * TARGET_FPS)
                   
+                  log("📸 جاري تجهيز إطارات الفيديو...")
                   for frame_num in range(num_total_frames):
-                      if raw_images:
-                          img_idx = (frame_num // (TARGET_FPS * 3)) % len(raw_images)
-                          img = cv2.imread(raw_images[img_idx])
-                          img = cv2.resize(img, (1280, 720))
-                          img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                          img = cv2.addWeighted(img, 0.6, np.zeros(img.shape, img.dtype), 0, 0)
-                      else:
-                          img = np.zeros((720, 1280, 3), np.uint8)
-
-                      pil_img = Image.fromarray(img)
+                      pil_img = Image.fromarray(base_img.copy())
                       draw = ImageDraw.Draw(pil_img)
                       
                       clean_title = fix_arabic(title)
                       clean_url = URL_TEXT
                       
+                      # 1. اسم المسلسل أعلى اليسار
                       draw.text((30, 30), clean_title, font=font_main, fill=(255, 255, 255))
+                      
+                      # 2. الموقع في المنتصف
                       w2, h2 = draw.textbbox((0, 0), clean_url, font=font_sub)[2:]
                       draw.text(((1280-w2)/2, 600), clean_url, font=font_sub, fill=(255, 237, 0))
                       
+                      # 3. العداد الصغير أسفل الموقع
                       rem = max(0, int(duration) - (frame_num // TARGET_FPS))
                       timer_txt = f"00:{rem:02d}"
                       w3, h3 = draw.textbbox((0, 0), timer_txt, font=font_timer)[2:]
@@ -250,7 +225,7 @@ jobs:
               except Exception as e:
                   log(f"❌ فشل إنشاء الفيديو بالكامل: {e}")
               finally:
-                  for f in [audio_p, INPUT_VIDEO, final_p]: 
+                  for f in [audio_p, "downloaded_bg.jpg", final_p]: 
                       if os.path.exists(f): os.remove(f)
 
           async def main():
