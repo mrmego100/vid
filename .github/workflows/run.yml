@@ -1,36 +1,63 @@
 name: Telegram Dynamic Channel Name
 
 on:
-  workflow_dispatch: # للتشغيل اليدوي لأول مرة فقط
+  workflow_dispatch: # للتشغيل اليدوي لأول مرة
 
 jobs:
   dynamic-channel-name:
     runs-on: ubuntu-latest
     permissions:
-      actions: write  # ضرورية للسماح للسكربت بإعادة تشغيل نفسه
+      contents: write
+      actions: write  # للسماح بإعادة تشغيل Workflow
     steps:
+      - name: 🧹 Delete Old Workflow Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 2
+
       - name: Run Task and Re-queue
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # التوكن التلقائي
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           #!/bin/bash
-          
-          # 1. المهمة (تغيير اسم القناة)
+
+          echo "بدء العملية: $(date)"
+
+          # ----------- 1. الإعدادات -----------
           BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
           CHANNEL_ID="@M015_1_6_7_8_9_10_11_12_13_14_15"
-          NAME="جلسة اختبار (كل دقيقة) - $(date +'%H:%M:%S')"
-          
-          echo "جاري تحديث القناة..."
-          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
-               -d chat_id="$CHANNEL_ID" \
-               -d title="$NAME"
 
-          echo "تم تحديث القناة: $NAME"
+          # تحديد الاسم المستهدف بناءً على الوقت
+          HOUR=$(date +'%H')
+          if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
+            EPISODES="1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
+            NAME="مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش الحلقة الحلقه $EPISODES"
+          else
+            NAME="مسلسل اليوم"
+          fi
 
-          # 2. الانتظار لمدة دقيقة واحدة (للاختبار)
-          echo "الانتظار لمدة دقيقة قبل التشغيل التالي..."
+          # ----------- 2. التحقق من الاسم الحالي (الذكاء البرمجي) -----------
+          echo "جاري فحص الاسم الحالي..."
+          CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
+          CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title // empty')
+
+          if [ "$CURRENT_TITLE" == "$NAME" ]; then
+            echo "الاسم مطابق بالفعل ( $NAME ). لا حاجة للتحديث."
+          else
+            echo "الاسم يحتاج تحديث. جاري التغيير..."
+            RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                 -d chat_id="$CHANNEL_ID" \
+                 -d title="$NAME")
+            echo "تم تحديث القناة: $NAME"
+            echo "رد Telegram: $RESPONSE"
+          fi
+
+          # ----------- 3. إعادة تشغيل الـ Workflow -----------
+          echo "الانتظار لمدة دقيقة قبل إعادة التشغيل..."
           sleep 60
-
-          # 3. إعادة تشغيل الـ Workflow نفسه
-          # تأكد أن اسم الملف 'main.yml' مطابق لاسم ملفك في المسار .github/workflows/
+          
+          echo "إعادة تشغيل Workflow..."
           gh workflow run main.yml
