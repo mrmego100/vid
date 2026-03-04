@@ -28,85 +28,96 @@ jobs:
       - name: Create and Run Script
         shell: python
         run: |
-          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np, random, urllib.parse
+          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np, random, urllib.parse, time
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
 
-          # --- الإعدادات ---
+          # --- إعدادات المحتوى ---
           TITLE = "أبي فوق الشجرة"
           VOICE = "ar-EG-SalmaNeural"
           URL_TEXT = "www.mshort.do.am"
 
           def log(msg): print(f"[LOG] {msg}")
-
-          def fix_arabic(text): 
-              return get_display(reshape(text))
+          def fix_arabic(text): return get_display(reshape(text))
 
           async def generate_audio():
-              log("🔊 جاري نطق اسم المسلسل...")
+              log("🔊 ذكاء اصطناعي: جاري توليد التعليق الصوتي...")
               speech_text = f"أهلاً بكم.. نقدم لكم اليوم الفيلم الكلاسيكي الشهير {TITLE}. يمكنكم المشاهدة الآن عبر موقعنا الموضح أمامكم."
               await edge_tts.Communicate(speech_text, VOICE).save("audio.mp3")
               return "audio.mp3"
 
-          def generate_images_free():
-              log("🎨 جاري توليد 5 صور (ذكاء اصطناعي مجاني)...")
+          def generate_ai_images():
+              log("🎨 ذكاء اصطناعي: جاري رسم 5 صور فريدة...")
               paths = []
-              # نستخدم Pollinations AI لأنه مجاني ولا يحتاج API Key
-              prompt = f"Cinematic vintage 1960s Egyptian movie style, beach scenes, inspired by '{TITLE}', high detail, 4k"
-              safe_prompt = urllib.parse.quote(prompt)
+              # برومبت احترافي للذكاء الاصطناعي
+              prompt = f"Hyper-realistic cinematic 1960s Egyptian movie scene, beach summer vibe, inspired by {TITLE}, high detail, 8k, no text, vintage film grain."
+              encoded_prompt = urllib.parse.quote(prompt)
               
               for i in range(5):
-                  seed = random.randint(1, 100000)
-                  url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1280&height=720&nologo=true&seed={seed}"
+                  # استخدام Seed عشوائي لضمان أن الصور "توليدية" وليست مكررة
+                  seed = random.randint(1, 999999)
+                  url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true&seed={seed}&model=flux"
+                  
                   try:
-                      response = requests.get(url, timeout=30)
+                      log(f"⏳ جاري تخيل الصورة رقم {i+1}...")
+                      response = requests.get(url, timeout=40)
                       if response.status_code == 200:
                           path = f"img_{i}.jpg"
                           with open(path, "wb") as f:
                               f.write(response.content)
                           paths.append(path)
-                          log(f"✅ تم توليد الصورة {i+1}")
+                          # تأخير بسيط لضمان استقرار السيرفر
+                          time.sleep(2)
                   except Exception as e:
-                      log(f"⚠️ خطأ في الصورة {i}: {e}")
+                      log(f"⚠️ خطأ في توليد الصورة {i}: {e}")
+              
               return paths
 
           def make_video(images, audio):
-              log("🎞️ جاري تجميع الفيديو...")
-              # الحصول على مدة الصوت
+              log("🎞️ جاري معالجة الفيديو ودمج العناصر...")
+              # حساب مدة الصوت
               d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio]
               duration = float(subprocess.check_output(d_cmd).decode().strip())
               
               for path in images:
-                  img = Image.open(path).resize((1280, 720))
+                  img = Image.open(path).convert("RGB").resize((1280, 720))
                   draw = ImageDraw.Draw(img)
                   try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 45)
                   except: font = ImageFont.load_default()
                   
-                  draw.text((50, 50), fix_arabic(TITLE), font=font, fill=(255, 255, 255))
-                  draw.text((50, 620), URL_TEXT, font=font, fill=(255, 237, 0))
+                  # كتابة النص العربي (معالجة البي دي)
+                  draw.text((50, 50), fix_arabic(TITLE), font=font, fill="white")
+                  draw.text((50, 620), URL_TEXT, font=font, fill="yellow")
                   img.save(path)
 
+              # دمج الصور مع الصوت
               img_speed = duration / len(images)
               cmd = f"ffmpeg -y -framerate 1/{img_speed} -i img_%d.jpg -i {audio} -c:v libx264 -pix_fmt yuv420p -r 25 -shortest video.mp4"
               subprocess.run(cmd, shell=True, check=True)
               return "video.mp4"
 
-          def upload_to_catbox(file):
-              log("🚀 الرفع إلى Catbox...")
+          def upload(file):
+              log("🚀 جاري الرفع إلى Catbox...")
               with open(file, "rb") as f:
                   r = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
               return r.text
 
           async def main():
-              audio_file = await generate_audio()
-              image_files = generate_images_free()
-              if not image_files:
-                  log("❌ فشل توليد الصور تماماً.")
+              # 1. توليد الصوت (AI)
+              audio = await generate_audio()
+              # 2. توليد الصور (AI التوليدي - Flux/Pollinations)
+              images = generate_ai_images()
+              
+              if not images:
+                  log("❌ فشل الذكاء الاصطناعي في رسم الصور حالياً، حاول لاحقاً.")
                   return
-              video_file = make_video(image_files, audio_file)
-              url = upload_to_catbox(video_file)
-              print(f"\n✨ الرابط النهائي: {url}")
+
+              # 3. صناعة الفيديو
+              video = make_video(images, audio)
+              # 4. الرفع
+              url = upload(video)
+              print(f"\n✨ اكتمل الفيديو بواسطة الذكاء الاصطناعي: {url}")
 
           if __name__ == "__main__":
               asyncio.run(main())
