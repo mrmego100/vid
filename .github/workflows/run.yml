@@ -23,26 +23,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          # معرف القناة الخاصة
           PRIVATE_CHANNEL_ID: "-1003731241901" 
-          # رابط الدعوة الخاص بك (هام جداً لجلب الطلبات)
+          # ضع رابط الدعوة الخاص بك هنا لضمان رؤية جميع الطلبات
           INVITE_LINK: "https://t.me/+_gcP_IqowOBmNmFk"
         run: |
           #!/bin/bash
           
           echo "بدء العملية: $(date)"
 
-          # --- 1. قبول طلبات الانضمام (مع تمرير رابط الدعوة لضمان الرؤية) ---
-          echo "جاري جلب طلبات الانضمام عبر الرابط المحدد..."
+          # --- 1. قبول طلبات الانضمام (الطريقة الصحيحة للقنوات) ---
+          echo "جاري جلب طلبات الانضمام..."
           
-          # نمرر invite_link هنا لأن هذا هو المفتاح لرؤية الـ 1000 طلب
+          # جلب قائمة الطلبات مباشرة من القناة
           REQUESTS_JSON=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChatJoinRequests?chat_id=$PRIVATE_CHANNEL_ID&invite_link=$INVITE_LINK")
           
           if [[ $(echo "$REQUESTS_JSON" | jq -r '.ok') == "true" ]]; then
             COUNT=$(echo "$REQUESTS_JSON" | jq '.result.requests | length')
-            echo "تم العثور على $COUNT طلب انضمام معلق للرابط."
+            echo "تم العثور على $COUNT طلب انضمام."
             
             if [ "$COUNT" -gt 0 ]; then
+              # تكرار عبر الطلبات وقبولها واحداً تلو الآخر مع تأخير
               echo "$REQUESTS_JSON" | jq -c '.result.requests[]' | while read -r req; do
                 USER_ID=$(echo "$req" | jq -r '.from.id')
                 
@@ -51,15 +51,16 @@ jobs:
                   -d chat_id="$PRIVATE_CHANNEL_ID" \
                   -d user_id="$USER_ID" > /dev/null
                   
-                echo "تم قبول طلب العضو: $USER_ID"
+                echo "تم قبول العضو: $USER_ID"
+                # تأخير بسيط جداً لمنع الحظر من تليجرام
+                sleep 0.5 
               done
             fi
           else
-            echo "خطأ في الاتصال بتليجرام أو الرابط غير صحيح."
-            echo "رد التليجرام: $REQUESTS_JSON"
+            echo "لا توجد طلبات جديدة أو خطأ في الرابط."
           fi
 
-          # --- 2. تحديث العناوين للقنوات العامة ---
+          # --- 2. جزء تحديث العناوين للقنوات العامة ---
           CHANNELS=(
             "@M015_1_6_7_8_9_10_11_12_13_14_15"
             "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش + افراج الحلقة الحلقه 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
@@ -99,25 +100,17 @@ jobs:
             CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title')
 
             if [ "$CURRENT_TITLE" != "$TARGET_NAME" ]; then
-                echo "تغيير مطلوب في $CHANNEL_ID: من '$CURRENT_TITLE' إلى '$TARGET_NAME'"
-                RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                echo "تغيير عنوان القناة $CHANNEL_ID..."
+                curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                      -d chat_id="$CHANNEL_ID" \
-                     -d title="$TARGET_NAME")
-                
-                if echo "$RESPONSE" | grep -q '"ok":true'; then
-                   MSG_TEXT="<b>يجب عليك الانضمام للقناة .. إنضم من هنا%0Ahttps://t.me/%2BdTSrOUAfzwZlZjY0%0Aالتاريخ: $(date +'%Y-%m-%d %H:%M:%S')</b>"
-                   curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-                   -d chat_id="$CHANNEL_ID" \
-                   -d text="$MSG_TEXT" \
-                   -d parse_mode="HTML"
-                fi
+                     -d title="$TARGET_NAME" > /dev/null
             fi
             
-            echo "انتظار 30 ثانية..."
+            # انتظار بين القنوات
             sleep 30
           done
 
-          echo "الانتهاء من العمليات. انتظار 5 ساعات..."
+          echo "الانتهاء من العمليات."
           sleep 18000
           
           curl -X POST -H "Authorization: token $GH_TOKEN" \
