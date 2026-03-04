@@ -1,42 +1,36 @@
 name: Telegram Dynamic Channel Name
 
 on:
-  schedule:
-    - cron: '0 * * * *'  # كل ساعة
-  workflow_dispatch:    # لتشغيله يدويًا
+  workflow_dispatch: # للتشغيل اليدوي لأول مرة فقط
 
 jobs:
   dynamic-channel-name:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write  # ضرورية للسماح للسكربت بإعادة تشغيل نفسه
     steps:
-      - name: Update Telegram Channel Name Dynamically
+      - name: Run Task and Re-queue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # التوكن التلقائي
         run: |
           #!/bin/bash
-
-          echo "بدء العملية: $(date)"
-
-          # التوكن والـ Channel ID
+          
+          # 1. المهمة (تغيير اسم القناة)
           BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
-          CHANNEL_ID="@M015_1_6_7_8_9_10_11_12_13_14_15" 
-
-          # الساعة الحالية
-          HOUR=$(date +'%H')
-
-          # تحديد اسم القناة حسب الوقت
-          if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
-            EPISODES="1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
-            NAME="مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش الحلقة الحلقه $EPISODES"
-          else
-            NAME="مسلسل اليوم"
-          fi
-
-          # إرسال طلب لتغيير اسم القناة
-          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+          CHANNEL_ID="@M015_1_6_7_8_9_10_11_12_13_14_15"
+          NAME="جلسة اختبار (كل دقيقة) - $(date +'%H:%M:%S')"
+          
+          echo "جاري تحديث القناة..."
+          curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                -d chat_id="$CHANNEL_ID" \
-               -d title="$NAME")
+               -d title="$NAME"
 
-          echo "تم تغيير اسم القناة إلى: $NAME"
-          echo "رد Telegram: $RESPONSE"
+          echo "تم تحديث القناة: $NAME"
 
-          # حفظ سجل الجلسة الجديدة
-          echo "$(date) - اسم القناة: $NAME" >> sessions.log
+          # 2. الانتظار لمدة دقيقة واحدة (للاختبار)
+          echo "الانتظار لمدة دقيقة قبل التشغيل التالي..."
+          sleep 60
+
+          # 3. إعادة تشغيل الـ Workflow نفسه
+          # تأكد أن اسم الملف 'main.yml' مطابق لاسم ملفك في المسار .github/workflows/
+          gh workflow run main.yml
