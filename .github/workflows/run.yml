@@ -60,4 +60,4 @@ jobs:
           echo "الانتظار لمدة دقيقة..."
           sleep 60
           echo "إعادة تشغيل Workflow..."
-          gh workflow run main.yml
+          gh workflow run run.yml
