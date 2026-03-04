@@ -23,26 +23,20 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
-          pip install edge-tts arabic-reshaper python-bidi opencv-python pillow numpy requests google-genai
+          pip install edge-tts arabic-reshaper python-bidi opencv-python pillow numpy requests
 
       - name: Create and Run Script
         shell: python
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np
-          from google import genai
-          from google.genai import types
+          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np, random, urllib.parse
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
 
+          # --- الإعدادات ---
           TITLE = "أبي فوق الشجرة"
           VOICE = "ar-EG-SalmaNeural"
           URL_TEXT = "www.mshort.do.am"
-          API_KEY = os.getenv("GEMINI_API_KEY")
-
-          client = genai.Client(api_key=API_KEY)
 
           def log(msg): print(f"[LOG] {msg}")
 
@@ -55,47 +49,33 @@ jobs:
               await edge_tts.Communicate(speech_text, VOICE).save("audio.mp3")
               return "audio.mp3"
 
-          def find_imagen_model():
-              log("🔍 فحص الموديلات المتاحة...")
-              try:
-                  for m in client.models.list():
-                      if 'imagen' in m.name.lower():
-                          log(f"✅ تم اختيار موديل: {m.name}")
-                          return m.name
-              except Exception as e:
-                  log(f"⚠️ خطأ فحص الموديلات: {e}")
-              return "imagen-3.0-generate-001"
-
-          def generate_images():
-              model_id = find_imagen_model()
-              log(f"🎨 جاري طلب 4 صور من {model_id}...") # تم التعديل لـ 4 صور
-              try:
-                  prompt = f"Cinematic 1960s Egyptian cinema style, beach scenes, inspired by the movie '{TITLE}', vintage colors, highly detailed, no text, 4k"
-                  response = client.models.generate_images(
-                      model=model_id,
-                      prompt=prompt,
-                      config=types.GenerateImagesConfig(
-                          number_of_images=4, # الحد الأقصى لموديل 4.0
-                          aspect_ratio="16:9",
-                          output_mime_type="image/jpeg"
-                      )
-                  )
-                  
-                  paths = []
-                  for i, gen_img in enumerate(response.generated_images):
-                      path = f"img_{i}.jpg"
-                      with open(path, "wb") as f:
-                          f.write(gen_img.image_bytes)
-                      paths.append(path)
-                  return paths
-              except Exception as e:
-                  log(f"❌ فشل توليد الصور: {e}")
-                  return []
+          def generate_images_free():
+              log("🎨 جاري توليد 5 صور (ذكاء اصطناعي مجاني)...")
+              paths = []
+              # نستخدم Pollinations AI لأنه مجاني ولا يحتاج API Key
+              prompt = f"Cinematic vintage 1960s Egyptian movie style, beach scenes, inspired by '{TITLE}', high detail, 4k"
+              safe_prompt = urllib.parse.quote(prompt)
+              
+              for i in range(5):
+                  seed = random.randint(1, 100000)
+                  url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1280&height=720&nologo=true&seed={seed}"
+                  try:
+                      response = requests.get(url, timeout=30)
+                      if response.status_code == 200:
+                          path = f"img_{i}.jpg"
+                          with open(path, "wb") as f:
+                              f.write(response.content)
+                          paths.append(path)
+                          log(f"✅ تم توليد الصورة {i+1}")
+                  except Exception as e:
+                      log(f"⚠️ خطأ في الصورة {i}: {e}")
+              return paths
 
           def make_video(images, audio):
               log("🎞️ جاري تجميع الفيديو...")
-              duration_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio]
-              total_duration = float(subprocess.check_output(duration_cmd).decode().strip())
+              # الحصول على مدة الصوت
+              d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio]
+              duration = float(subprocess.check_output(d_cmd).decode().strip())
               
               for path in images:
                   img = Image.open(path).resize((1280, 720))
@@ -107,12 +87,8 @@ jobs:
                   draw.text((50, 620), URL_TEXT, font=font, fill=(255, 237, 0))
                   img.save(path)
 
-              img_speed = total_duration / len(images) # تقسيم الوقت على عدد الصور الفعلي
-              
-              cmd = (
-                  f"ffmpeg -y -framerate 1/{img_speed} -i img_%d.jpg -i {audio} "
-                  f"-c:v libx264 -pix_fmt yuv420p -r 25 -shortest video.mp4"
-              )
+              img_speed = duration / len(images)
+              cmd = f"ffmpeg -y -framerate 1/{img_speed} -i img_%d.jpg -i {audio} -c:v libx264 -pix_fmt yuv420p -r 25 -shortest video.mp4"
               subprocess.run(cmd, shell=True, check=True)
               return "video.mp4"
 
@@ -123,13 +99,14 @@ jobs:
               return r.text
 
           async def main():
-              if not API_KEY: return log("Missing API Key")
               audio_file = await generate_audio()
-              image_files = generate_images()
-              if not image_files: return
+              image_files = generate_images_free()
+              if not image_files:
+                  log("❌ فشل توليد الصور تماماً.")
+                  return
               video_file = make_video(image_files, audio_file)
-              catbox_url = upload_to_catbox(video_file)
-              log(f"✨ الرابط النهائي: {catbox_url}")
+              url = upload_to_catbox(video_file)
+              print(f"\n✨ الرابط النهائي: {url}")
 
           if __name__ == "__main__":
               asyncio.run(main())
