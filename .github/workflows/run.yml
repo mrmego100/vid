@@ -1,15 +1,19 @@
 name: Telegram Dynamic Channel Name
 
 on:
-  workflow_dispatch: # للتشغيل اليدوي لأول مرة
+  workflow_dispatch: 
 
 jobs:
   dynamic-channel-name:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write  # للسماح بإعادة تشغيل Workflow
+      actions: write  
     steps:
+      # هذه هي الخطوة التي كانت مفقودة!
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: 🧹 Delete Old Workflow Runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
@@ -30,7 +34,6 @@ jobs:
           BOT_TOKEN="8691643823:AAHd1KPqFa0Gc-aVb6wqa30TYaa4j3BgDSk"
           CHANNEL_ID="@M015_1_6_7_8_9_10_11_12_13_14_15"
 
-          # تحديد الاسم المستهدف بناءً على الوقت
           HOUR=$(date +'%H')
           if [ $HOUR -ge 7 ] && [ $HOUR -lt 19 ]; then
             EPISODES="1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
@@ -39,25 +42,22 @@ jobs:
             NAME="مسلسل اليوم"
           fi
 
-          # ----------- 2. التحقق من الاسم الحالي (الذكاء البرمجي) -----------
+          # ----------- 2. التحقق -----------
           echo "جاري فحص الاسم الحالي..."
           CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
           CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title // empty')
 
           if [ "$CURRENT_TITLE" == "$NAME" ]; then
-            echo "الاسم مطابق بالفعل ( $NAME ). لا حاجة للتحديث."
+            echo "الاسم مطابق بالفعل. لا حاجة للتحديث."
           else
             echo "الاسم يحتاج تحديث. جاري التغيير..."
-            RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                  -d chat_id="$CHANNEL_ID" \
-                 -d title="$NAME")
-            echo "تم تحديث القناة: $NAME"
-            echo "رد Telegram: $RESPONSE"
+                 -d title="$NAME"
           fi
 
-          # ----------- 3. إعادة تشغيل الـ Workflow -----------
-          echo "الانتظار لمدة دقيقة قبل إعادة التشغيل..."
+          # ----------- 3. إعادة التشغيل -----------
+          echo "الانتظار لمدة دقيقة..."
           sleep 60
-          
           echo "إعادة تشغيل Workflow..."
           gh workflow run main.yml
