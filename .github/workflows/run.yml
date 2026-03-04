@@ -43,9 +43,9 @@ jobs:
 
           echo "بدء العملية: $(date)"
 
-          # تحديد وقت النهار (من 6 صباحاً إلى 6 مساءً)
+          # تحديد وقت النهار (من 9 صباحاً إلى 8 مساءً)
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
-          DAY_START=$(( 9 * 00 ))
+          DAY_START=$(( 9 * 60 ))
           DAY_END=$(( 20 * 60 ))
 
           # حلقة التكرار لمعالجة القنوات
@@ -65,16 +65,29 @@ jobs:
                  -d title="$TARGET_NAME")
             
             echo "رد التليجرام: $RESPONSE"
+            
+            # التحقق مما إذا كان تغيير الاسم ناجحاً لحذف رسالة التنبيه
+            if echo "$RESPONSE" | grep -q '"ok":true'; then
+               echo "تم تغيير الاسم بنجاح. جاري حذف رسالة التنبيه..."
+               sleep 1
+               # الحصول على ID آخر رسالة في القناة وحذفها
+               LAST_MSG_ID=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates" | jq '.result[-1].message.message_id')
+               if [ "$LAST_MSG_ID" != "null" ]; then
+                 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/deleteMessage" \
+                 -d chat_id="$CHANNEL_ID" \
+                 -d message_id="$LAST_MSG_ID"
+                 echo "تم حذف الرسالة رقم: $LAST_MSG_ID"
+               fi
+            fi
+            
             sleep 2
           done
 
-          # الانتظار 30 ثانية قبل تشغيل الجلسة الجديدة
           echo "الانتهاء من تحديث العناوين. انتظار 30 ثانية..."
           sleep 30
           
           echo "جاري تشغيل جلسة جديدة..."
           
-          # تشغيل الجلسة الجديدة (run.yml)
           curl -X POST -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/run.yml/dispatches" \
