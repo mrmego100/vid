@@ -35,7 +35,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
+          sudo apt-get update && sudo apt-get install -y ffmpeg nodejs
           pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio yt-dlp
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
@@ -138,7 +138,8 @@ jobs:
                       'format': 'best[height<=720][ext=mp4]',
                       'outtmpl': INPUT_VIDEO,
                       'quiet': True,
-                      'default_search': 'ytsearch1'
+                      'default_search': 'ytsearch1',
+                      'extractor_args': {'youtube': ['player_client=android']}
                   }
 
                   with YoutubeDL(ydl_opts) as ydl:
