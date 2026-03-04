@@ -37,7 +37,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg nodejs git
           pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
-          pip install google-generativeai duckduckgo-search
+          pip install google-genai ddgs
           pip install -U git+https://github.com/yt-dlp/yt-dlp.git@master
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
@@ -55,8 +55,14 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
-          from duckduckgo_search import DDGS
-          import google.generativeai as genai
+          
+          # استيراد آمن لتخطي مشكلة تغيير اسم مكتبة البحث
+          try:
+              from ddgs import DDGS
+          except ImportError:
+              from duckduckgo_search import DDGS
+              
+          from google import genai
 
           nest_asyncio.apply()
 
@@ -152,22 +158,20 @@ jobs:
               
               log(f"🎨 جاري رسم صورة بالذكاء الاصطناعي للمسلسل: {query}...")
               try:
-                  genai.configure(api_key=api_key)
-                  # استخدام أحدث موديل لتوليد الصور من جوجل
-                  from google.generativeai import ImageGenerationModel
-                  model = ImageGenerationModel("imagen-3.0-generate-001")
-                  
+                  # استخدام الحزمة الجديدة google.genai
+                  client = genai.Client(api_key=api_key)
                   prompt = f"A cinematic, high quality background poster for a TV series called '{query}', no text, no watermarks, dramatic lighting, 16:9 aspect ratio."
                   
-                  result = model.generate_images(
+                  result = client.models.generate_images(
+                      model='imagen-3.0-generate-001',
                       prompt=prompt,
-                      number_of_images=1,
-                      aspect_ratio="16:9"
+                      config=dict(
+                          number_of_images=1,
+                          aspect_ratio="16:9"
+                      )
                   )
                   
-                  for img in result.images:
-                      img.image.save(img_path)
-                  
+                  result.generated_images[0].image.save(img_path)
                   log("✅ تم توليد الصورة بنجاح عبر Gemini!")
                   return img_path
               except Exception as e:
@@ -199,15 +203,18 @@ jobs:
                   font_sub = ImageFont.truetype("font.ttf", 60)
                   font_timer = ImageFont.truetype("font.ttf", 30)
 
-                  # تجهيز الصورة الأساسية
+                  # تجهيز الصورة الأساسية مع الحماية (Fallback) لـ OpenCV
+                  base_img = None
                   if bg_path and os.path.exists(bg_path):
                       base_img = cv2.imread(bg_path)
+                      
+                  if base_img is not None:
                       base_img = cv2.resize(base_img, (1280, 720))
                       base_img = cv2.cvtColor(base_img, cv2.COLOR_BGR2RGB)
                       # تعتيم الصورة بنسبة 60% ليظهر النص
                       base_img = cv2.addWeighted(base_img, 0.6, np.zeros(base_img.shape, base_img.dtype), 0, 0)
                   else:
-                      log("ℹ️ لم يتم العثور على أي صورة، سيتم استخدام خلفية سوداء كحل طوارئ.")
+                      log("ℹ️ الصورة المحملة كانت تالفة أو غير مدعومة، سيتم استخدام خلفية سوداء كحل طوارئ.")
                       base_img = np.zeros((720, 1280, 3), np.uint8)
 
                   num_total_frames = int(duration * TARGET_FPS)
