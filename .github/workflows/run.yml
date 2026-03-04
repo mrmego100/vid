@@ -23,41 +23,43 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          # ضع معرف القناة الخاصة هنا (مثال: -100123456789)
-          PRIVATE_CHANNEL_ID: "-1003731241901" 
+          # تأكد أن هذا الرقم يبدأ بـ -100 (مثلاً: -100123456789)
+          PRIVATE_CHANNEL_ID: "-1003798623046" 
         run: |
           #!/bin/bash
           
           echo "بدء العملية: $(date)"
 
-          # --- 1. جزء قبول طلبات الانضمام للقناة الخاصة ---
-          echo "فحص طلبات الانضمام المعلقة..."
-          # جلب التحديثات
-          UPDATES=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates")
+          # --- 1. قبول طلبات الانضمام باستخدام getChatJoinRequests (أفضل للعدد الكبير) ---
+          echo "جاري جلب طلبات الانضمام المعلقة..."
           
-          # استخراج الطلبات المعلقة والموافقة عليها
-          JOIN_REQUESTS=$(echo "$UPDATES" | jq -r '.result[] | select(.chat_join_request) | .chat_join_request')
+          # جلب قائمة الطلبات مباشرة من القناة الخاصة
+          REQUESTS_JSON=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChatJoinRequests?chat_id=$PRIVATE_CHANNEL_ID")
           
-          if [ ! -z "$JOIN_REQUESTS" ]; then
-            echo "تم العثور على طلبات انضمام، جاري القبول..."
-            # تكرار عبر كل الطلبات الموجودة في التحديثات
-            echo "$UPDATES" | jq -c '.result[] | select(.chat_join_request)' | while read -r req; do
-              CHAT_ID=$(echo "$req" | jq -r '.chat_join_request.chat.id')
-              USER_ID=$(echo "$req" | jq -r '.chat_join_request.from.id')
-              
-              # التأكد أن الطلب خاص بالقناة المطلوبة فقط
-              if [ "$CHAT_ID" == "$PRIVATE_CHANNEL_ID" ]; then
+          # التحقق من وجود طلبات
+          if [[ $(echo "$REQUESTS_JSON" | jq '.ok') == "true" ]]; then
+            COUNT=$(echo "$REQUESTS_JSON" | jq '.result.requests | length')
+            echo "تم العثور على $COUNT طلب انضمام."
+            
+            if [ "$COUNT" -gt 0 ]; then
+              echo "$REQUESTS_JSON" | jq -c '.result.requests[]' | while read -r req; do
+                USER_ID=$(echo "$req" | jq -r '.from.id')
+                
+                # الموافقة على الطلب
                 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/approveChatJoinRequest" \
-                  -d chat_id="$CHAT_ID" \
-                  -d user_id="$USER_ID"
+                  -d chat_id="$PRIVATE_CHANNEL_ID" \
+                  -d user_id="$USER_ID" > /dev/null
+                  
                 echo "تم قبول طلب العضو: $USER_ID"
-              fi
-            done
+                sleep 0.5 # تأخير بسيط بين كل قبول لتجنب الحظر
+              done
+            fi
           else
-            echo "لا توجد طلبات انضمام جديدة."
+            echo "خطأ في جلب الطلبات أو لا توجد طلبات معلقة."
           fi
 
-          # --- 2. جزء تحديث العناوين للقنوات العامة ---
+          # --- 2. تحديث العناوين ---
+          # (تم ترك الجزء الخاص بتحديث العناوين كما هو)
           CHANNELS=(
             "@M015_1_6_7_8_9_10_11_12_13_14_15"
             "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش + افراج الحلقة الحلقه 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
@@ -65,7 +67,7 @@ jobs:
             
             "@telebox013"
             "مسلسل المداح الجزء 6 + الكينج + سوا سوا + عين سحرية + الحلقة + الحلقه + الموسم ٦ + سحريه + سواسوا + الكنج + 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
-            "2الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل"
+            "2الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل" 
 
             "@DR_1_2_3_4_5_6_7_8_9_10_11_12_13"
             "مسلسل وننسي اللي كان .. الحلقة ١,٥,٦,٧,٨,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢ ننسى وننسى اللى الي كان الى كن الحلقة الحلقه 1ح1"
