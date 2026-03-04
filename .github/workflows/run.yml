@@ -9,15 +9,6 @@ jobs:
       contents: write
       actions: write
     steps:
-
-      - name: 🧹 Delete Old Workflow Runs
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 2
-          
       - name: Update Titles
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,32 +36,36 @@ jobs:
 
           echo "بدء العملية: $(date)"
 
+          # حساب الوقت الحالي بالدقائق (ساعات * 60 + دقائق)
+          NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
+          DAY_START=$(( 6 * 60 ))      # 360 دقيقة
+          DAY_END=$(( 18 * 60 ))       # 1080 دقيقة
+
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
-            DAY_NAME="${CHANNELS[i+1]}"
-            NIGHT_NAME="${CHANNELS[i+2]}"
-
-            # منطق الوقت الجديد: من 06 إلى 18 نهار، والباقي ليل
-            HOUR=$(date +'%H')
-            if [ $HOUR -ge 6 ] && [ $HOUR -le 18 ]; then
-              TARGET_NAME="$DAY_NAME"
+            
+            # المقارنة بالدقائق
+            if [ "$NOW_MINUTES" -ge "$DAY_START" ] && [ "$NOW_MINUTES" -lt "$DAY_END" ]; then
+              TARGET_NAME="${CHANNELS[i+1]}"
             else
-              TARGET_NAME="$NIGHT_NAME"
+              TARGET_NAME="${CHANNELS[i+2]}"
             fi
 
-            echo "محاولة معالجة القناة: $CHANNEL_ID"
+            echo "معالجة القناة: $CHANNEL_ID | الهدف: $TARGET_NAME"
             
-            # التحقق والتحديث
             RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                  -d chat_id="$CHANNEL_ID" \
                  -d title="$TARGET_NAME")
             
             echo "رد التليجرام: $RESPONSE"
-            
             sleep 2
           done
 
-          # إعادة التشغيل بعد دقيقة
-          echo "الانتظار لمدة دقيقة ثم إعادة التشغيل..."
-          sleep 60
-          gh workflow run run.yml
+          echo "إعادة تشغيل الجلسة بعد دقيقة..."
+          sleep 30
+          
+          # إعادة التشغيل باستخدام API (لتجنب خطأ git)
+          curl -X POST -H "Authorization: token $GH_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${GITHUB_WORKFLOW}/dispatches" \
+          -d '{"ref":"main"}'
