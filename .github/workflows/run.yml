@@ -2,8 +2,8 @@ name: Continuous Video Generator
 
 on:
   schedule:
-    - cron: "0 * * * *" # يعمل كل ساعة
-  workflow_dispatch:
+    - cron: "0 * * * *" # يعمل تلقائياً كل ساعة
+  workflow_dispatch: # يسمح لك بالتشغيل اليدوي
 
 jobs:
   build:
@@ -23,105 +23,122 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
-          pip install edge-tts arabic-reshaper python-bidi opencv-python pillow numpy requests google-genai
+          pip install edge-tts arabic-reshaper python-bidi opencv-python pillow numpy requests
 
       - name: Create and Run Script
         shell: python
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np
-          from google import genai
-          from google.genai import types
+          import os, asyncio, edge_tts, subprocess, requests, cv2, numpy as np, random, urllib.parse, time
           from PIL import Image, ImageDraw, ImageFont
           from arabic_reshaper import reshape
           from bidi.algorithm import get_display
 
-          # --- إعداداتك الخاصة ---
+          # --- إعدادات المحتوى ---
           TITLE = "أبي فوق الشجرة"
-          VOICE = "ar-EG-SalmaNeural"
+          VOICE = "ar-EG-SalmaNeural" # صوت مصري احترافي
           URL_TEXT = "www.mshort.do.am"
-          API_KEY = os.getenv("GEMINI_API_KEY")
-
-          # تهيئة العميل (للمشتركين في الخطة المدفوعة)
-          client = genai.Client(api_key=API_KEY)
 
           def log(msg): print(f"[LOG] {msg}")
           def fix_arabic(text): return get_display(reshape(text))
 
           async def generate_audio():
-              log("🔊 جاري توليد التعليق الصوتي لاسم المسلسل...")
-              speech_text = f"أهلاً بكم في عرضنا اليوم عن العمل الكلاسيكي الخالد {TITLE}. يمكنكم مشاهدته كاملاً الآن عبر موقعنا."
+              log("🔊 جاري توليد التعليق الصوتي باستخدام AI...")
+              speech_text = f"أهلاً بكم.. نقدم لكم اليوم الفيلم الكلاسيكي الشهير {TITLE}. يمكنكم المشاهدة الآن عبر موقعنا الموضح أمامكم بجودة عالية."
               await edge_tts.Communicate(speech_text, VOICE).save("audio.mp3")
               return "audio.mp3"
 
-          def generate_images_gemini():
-              log("🎨 جاري توليد 5 صور بواسطة Gemini Imagen (الخطة المدفوعة)...")
+          def generate_flux_images():
+              log("🎨 جاري توليد 5 صور باستخدام موديل FLUX.1...")
               paths = []
-              # طلب 5 صور (سنقوم بطلبين لأن بعض الموديلات تطلب بحد أقصى 4 في الطلب الواحد)
-              prompts = [
-                  f"Cinematic vintage 1960s Egyptian movie poster style for {TITLE}, beach, high detail",
-                  f"Cinematic scene from the movie {TITLE}, summer vibe, 4k resolution"
-              ]
+              # وصف سينمائي دقيق لفيلم "أبي فوق الشجرة"
+              prompt = f"Cinematic 1960s vintage Egyptian movie scene, beach summer atmosphere, inspired by the movie '{TITLE}', ultra-realistic, cinematic lighting, 8k, photorealistic, no text"
+              encoded_prompt = urllib.parse.quote(prompt)
               
-              count = 0
-              try:
-                  # الطلب الأول (3 صور)
-                  resp1 = client.models.generate_images(
-                      model='imagen-3.0-generate-001',
-                      prompt=prompts[0],
-                      config=types.GenerateImagesConfig(number_of_images=3, aspect_ratio="16:9")
-                  )
-                  # الطلب الثاني (صورتين)
-                  resp2 = client.models.generate_images(
-                      model='imagen-3.0-generate-001',
-                      prompt=prompts[1],
-                      config=types.GenerateImagesConfig(number_of_images=2, aspect_ratio="16:9")
-                  )
+              for i in range(5):
+                  seed = random.randint(1, 999999999)
+                  # رابط استدعاء موديل Flux
+                  url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true&seed={seed}&model=flux"
                   
-                  all_images = resp1.generated_images + resp2.generated_images
-                  
-                  for img in all_images:
-                      path = f"img_{count}.jpg"
-                      with open(path, "wb") as f:
-                          f.write(img.image_bytes)
-                      paths.append(path)
-                      count += 1
-                  return paths
-              except Exception as e:
-                  log(f"❌ خطأ Gemini: تأكد من تفعيل الدفع للـ API. التفاصيل: {e}")
-                  return []
+                  try:
+                      log(f"⏳ ذكاء اصطناعي: يتخيل الصورة {i+1}...")
+                      response = requests.get(url, timeout=60)
+                      if response.status_code == 200:
+                          path = f"img_{i}.jpg"
+                          with open(path, "wb") as f:
+                              f.write(response.content)
+                          paths.append(path)
+                          time.sleep(1) # استراحة قصيرة للسيرفر
+                      else:
+                          log(f"⚠️ فشل الطلب {i+1}: كود {response.status_code}")
+                  except Exception as e:
+                      log(f"⚠️ خطأ في توليد الصورة {i}: {e}")
+              
+              return paths
 
           def make_video(images, audio):
-              log(f"🎞️ تجميع الفيديو من {len(images)} صور...")
+              log("🎞️ جاري تركيب الفيديو وإضافة النصوص العربية...")
+              # معرفة مدة الصوت الحقيقية لضبط سرعة الصور
               d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio]
-              duration = float(subprocess.check_output(d_cmd).decode().strip())
+              total_duration = float(subprocess.check_output(d_cmd).decode().strip())
               
               for path in images:
                   img = Image.open(path).convert("RGB").resize((1280, 720))
                   draw = ImageDraw.Draw(img)
+                  
+                  # تحميل الخط العربي الافتراضي في Linux
                   try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 50)
                   except: font = ImageFont.load_default()
                   
-                  draw.text((50, 50), fix_arabic(TITLE), font=font, fill="white")
-                  draw.text((50, 600), URL_TEXT, font=font, fill="yellow")
+                  # إضافة طبقة سوداء خفيفة تحت النص لزيادة الوضوح
+                  overlay = Image.new('RGBA', img.size, (0,0,0,0))
+                  draw_overlay = ImageDraw.Draw(overlay)
+                  draw_overlay.rectangle([0, 0, 1280, 100], fill=(0,0,0,80)) # شريط علوي
+                  draw_overlay.rectangle([0, 600, 1280, 720], fill=(0,0,0,80)) # شريط سفلي
+                  img.paste(overlay, (0,0), overlay)
+
+                  # كتابة النص (أعلى الصورة وأسفلها)
+                  draw.text((40, 25), fix_arabic(TITLE), font=font, fill=(255, 255, 255))
+                  draw.text((40, 630), URL_TEXT, font=font, fill=(255, 237, 0)) # لون أصفر
                   img.save(path)
 
-              img_speed = duration / len(images)
-              subprocess.run(f"ffmpeg -y -framerate 1/{img_speed} -i img_%d.jpg -i {audio} -c:v libx264 -pix_fmt yuv420p -shortest video.mp4", shell=True)
+              # حساب زمن عرض كل صورة (مدة الصوت / عدد الصور)
+              frame_rate = len(images) / total_duration
+              
+              # أمر FFmpeg لدمج الصور مع الصوت بدقة عالية
+              cmd = (
+                  f"ffmpeg -y -framerate {frame_rate} -i img_%d.jpg -i {audio} "
+                  f"-c:v libx264 -pix_fmt yuv420p -crf 20 -c:a aac -shortest video.mp4"
+              )
+              subprocess.run(cmd, shell=True, check=True)
               return "video.mp4"
 
-          def upload(file):
-              log("🚀 الرفع إلى Catbox...")
-              return requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": open(file, "rb")}).text
+          def upload_to_catbox(file):
+              log("🚀 جاري رفع الفيديو النهائي إلى Catbox...")
+              if not os.path.exists(file): return "File not found"
+              with open(file, "rb") as f:
+                  response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
+              return response.text.strip()
 
           async def main():
-              audio = await generate_audio()
-              images = generate_images_gemini()
-              if not images: return
-              video = make_video(images, audio)
-              url = upload(video)
-              log(f"✅ تم بنجاح! الرابط: {url}")
+              # 1. توليد الصوت
+              audio_file = await generate_audio()
+              # 2. توليد صور Flux التوليدية
+              image_files = generate_flux_images()
+              
+              if not image_files:
+                  log("❌ فشل توليد الصور بواسطة Flux. حاول مرة أخرى.")
+                  return
+
+              # 3. دمج الفيديو
+              final_video = make_video(image_files, audio_file)
+              
+              # 4. الرفع والحصول على الرابط
+              url = upload_to_catbox(final_video)
+              
+              print("\n" + "="*40)
+              log(f"✨ العمل تم بواسطة الذكاء الاصطناعي (Flux + EdgeTTS)")
+              log(f"🔗 رابط الفيديو: {url}")
+              print("="*40)
 
           if __name__ == "__main__":
               asyncio.run(main())
