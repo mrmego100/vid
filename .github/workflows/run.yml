@@ -23,21 +23,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          # معرف القناة الخاصة (تم التحديث)
+          # معرف القناة الخاصة
           PRIVATE_CHANNEL_ID: "-1003731241901" 
+          # رابط الدعوة الخاص بك (هام جداً لجلب الطلبات)
+          INVITE_LINK: "https://t.me/+_gcP_IqowOBmNmFk"
         run: |
           #!/bin/bash
           
           echo "بدء العملية: $(date)"
 
-          # --- 1. قبول طلبات الانضمام (معالجة الأعداد الكبيرة) ---
-          echo "جاري فحص طلبات الانضمام للقناة الخاصة..."
+          # --- 1. قبول طلبات الانضمام (مع تمرير رابط الدعوة لضمان الرؤية) ---
+          echo "جاري جلب طلبات الانضمام عبر الرابط المحدد..."
           
-          REQUESTS_JSON=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChatJoinRequests?chat_id=$PRIVATE_CHANNEL_ID")
+          # نمرر invite_link هنا لأن هذا هو المفتاح لرؤية الـ 1000 طلب
+          REQUESTS_JSON=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChatJoinRequests?chat_id=$PRIVATE_CHANNEL_ID&invite_link=$INVITE_LINK")
           
           if [[ $(echo "$REQUESTS_JSON" | jq -r '.ok') == "true" ]]; then
             COUNT=$(echo "$REQUESTS_JSON" | jq '.result.requests | length')
-            echo "تم العثور على $COUNT طلب انضمام معلق."
+            echo "تم العثور على $COUNT طلب انضمام معلق للرابط."
             
             if [ "$COUNT" -gt 0 ]; then
               echo "$REQUESTS_JSON" | jq -c '.result.requests[]' | while read -r req; do
@@ -52,7 +55,8 @@ jobs:
               done
             fi
           else
-            echo "لا توجد طلبات معلقة أو حدث خطأ في الاتصال بتليجرام."
+            echo "خطأ في الاتصال بتليجرام أو الرابط غير صحيح."
+            echo "رد التليجرام: $REQUESTS_JSON"
           fi
 
           # --- 2. تحديث العناوين للقنوات العامة ---
