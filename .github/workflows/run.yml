@@ -37,13 +37,15 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg nodejs git
           pip install edge-tts arabic-reshaper python-bidi pytrends opencv-python pillow numpy requests nest_asyncio
-          pip install duckduckgo-search
+          pip install google-generativeai duckduckgo-search
+          pip install -U git+https://github.com/yt-dlp/yt-dlp.git@master
           pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
       - name: Create and Run Script
         shell: python
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           import datetime, asyncio, edge_tts, requests, os, cv2, subprocess, time, numpy as np, sys, nest_asyncio, json, random
           from PIL import Image, ImageDraw, ImageFont
@@ -54,6 +56,7 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
           from duckduckgo_search import DDGS
+          import google.generativeai as genai
 
           nest_asyncio.apply()
 
@@ -86,7 +89,7 @@ jobs:
           def upload_to_youtube(video_path, title):
               creds_json = os.environ.get('YOUTUBE_CREDENTIALS')
               if not creds_json:
-                  log("❌ فشل الرفع: سر 'YOUTUBE_CREDENTIALS' غير موجود.")
+                  log("❌ فشل الرفع ليوتيوب: سر 'YOUTUBE_CREDENTIALS' غير موجود.")
                   return False
               try:
                   creds_dict = json.loads(creds_json)
@@ -121,23 +124,55 @@ jobs:
                   response = requests.post("https://catbox.moe/user/api.php", data=data, files=files)
                   return response.text.strip()
 
-          def download_image(query):
-              log(f"🔍 جاري البحث عن صورة للمسلسل: {query}")
+          def download_image_fallback(query):
+              log(f"🔍 جاري البحث عن صورة بديلة للمسلسل: {query}")
               img_path = "downloaded_bg.jpg"
               try:
                   with DDGS() as ddgs:
                       results = list(ddgs.images(query, max_results=1))
                       if results:
                           img_url = results[0]['image']
-                          log(f"🔗 جاري تحميل الصورة: {img_url}")
+                          log(f"🔗 جاري تحميل الصورة البديلة: {img_url}")
                           response = requests.get(img_url, timeout=10)
                           if response.status_code == 200:
                               with open(img_path, 'wb') as f:
                                   f.write(response.content)
                               return img_path
               except Exception as e:
-                  log(f"⚠️ فشل البحث أو تحميل الصورة: {e}")
+                  log(f"⚠️ فشل البحث أو تحميل الصورة البديلة: {e}")
               return None
+
+          def generate_bg_with_gemini(query):
+              api_key = os.environ.get('GEMINI_API_KEY')
+              img_path = "downloaded_bg.jpg"
+              
+              if not api_key:
+                  log("⚠️ مفتاح Gemini غير موجود في الأسرار، سيتم استخدام البحث العادي.")
+                  return download_image_fallback(query)
+              
+              log(f"🎨 جاري رسم صورة بالذكاء الاصطناعي للمسلسل: {query}...")
+              try:
+                  genai.configure(api_key=api_key)
+                  # استخدام أحدث موديل لتوليد الصور من جوجل
+                  from google.generativeai import ImageGenerationModel
+                  model = ImageGenerationModel("imagen-3.0-generate-001")
+                  
+                  prompt = f"A cinematic, high quality background poster for a TV series called '{query}', no text, no watermarks, dramatic lighting, 16:9 aspect ratio."
+                  
+                  result = model.generate_images(
+                      prompt=prompt,
+                      number_of_images=1,
+                      aspect_ratio="16:9"
+                  )
+                  
+                  for img in result.images:
+                      img.image.save(img_path)
+                  
+                  log("✅ تم توليد الصورة بنجاح عبر Gemini!")
+                  return img_path
+              except Exception as e:
+                  log(f"⚠️ فشل توليد الصورة بالذكاء الاصطناعي (السبب: {e}). سيتم استخدام البحث العادي...")
+                  return download_image_fallback(query)
 
           async def create_video(title, index):
               audio_p, final_p = f"a_{index}.mp3", f"final_{index}.mp4"
@@ -149,8 +184,8 @@ jobs:
                   d_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_p]
                   duration = float(subprocess.check_output(d_cmd).decode().strip())
                   
-                  # --- 2. تحميل صورة واحدة للعنوان ---
-                  bg_path = download_image(title)
+                  # --- 2. توليد صورة للمسلسل بواسطة Gemini ---
+                  bg_path = generate_bg_with_gemini(title)
                   
                   if not os.path.exists(PROCESSED_DIR):
                       os.makedirs(PROCESSED_DIR)
@@ -172,7 +207,7 @@ jobs:
                       # تعتيم الصورة بنسبة 60% ليظهر النص
                       base_img = cv2.addWeighted(base_img, 0.6, np.zeros(base_img.shape, base_img.dtype), 0, 0)
                   else:
-                      log("ℹ️ لم يتم العثور على صورة، سيتم استخدام خلفية سوداء.")
+                      log("ℹ️ لم يتم العثور على أي صورة، سيتم استخدام خلفية سوداء كحل طوارئ.")
                       base_img = np.zeros((720, 1280, 3), np.uint8)
 
                   num_total_frames = int(duration * TARGET_FPS)
