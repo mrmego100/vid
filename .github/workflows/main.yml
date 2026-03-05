@@ -81,12 +81,12 @@ jobs:
             "@M03_1_15_16_17_18_19_20_21" "مسلسل إفراج عمرو سعد أفراج الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢,٢٣,٢٤,٢ افراج الحلقه الافراج حلقة الأولي حلقه"
           )
 
-          # قائمة شاملة لكل المعرفات لإرسال المنشور
-          ALL_IDS=(
-            "@M015_1_6_7_8_9_10_11_12_13_14_15" "@telebox013" "@DR_1_2_3_4_5_6_7_8_9_10_11_12_13" 
-            "@M2_1_5_6_7_8_9_10_11_12_13_14_15" "@M07_1_6_7_8_9_10_11_12_13_14_15" 
-            "@M01_1_15_16_17_18_19_20_21" "@M02_1_15_16_17_18_19_20_21" "@M03_1_15_16_17_18_19_20_21"
-          )
+          # --- استخراج جميع المعرفات تلقائياً ---
+          ALL_IDS=()
+          for ((i=0; i<${#CHANNELS[@]}; i+=3)); do ALL_IDS+=("${CHANNELS[i]}"); done
+          for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do ALL_IDS+=("${NEW_CHANNELS[j]}"); done
+
+          echo "تم استخراج المعرفات تلقائياً: ${ALL_IDS[*]}"
 
           # 1. تحديث عناوين المجموعة الأولى
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
@@ -100,8 +100,12 @@ jobs:
             else
               TARGET_NAME="${CHANNELS[i+2]}"
             fi
+            echo "تحديث عنوان المجموعة الأولى: $CHANNEL_ID"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" -d chat_id="$CHANNEL_ID" -d title="$TARGET_NAME" > /dev/null
-            sleep 1
+            
+            SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
+            echo "انتظار $SLEEP_TIME ثانية..."
+            sleep $SLEEP_TIME
           done
 
           # 2. تحديث عناوين المجموعة الثانية (إلحاق الوقت)
@@ -109,20 +113,27 @@ jobs:
             NEW_ID="${NEW_CHANNELS[j]}"
             NEW_BASE_NAME="${NEW_CHANNELS[j+1]}"
             FINAL_NAME="$NEW_BASE_NAME $CURRENT_TIME"
+            echo "تحديث عنوان المجموعة الثانية: $NEW_ID"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" -d chat_id="$NEW_ID" -d title="$FINAL_NAME" > /dev/null
-            sleep 1
+            
+            SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
+            echo "انتظار $SLEEP_TIME ثانية..."
+            sleep $SLEEP_TIME
           done
 
-          # 3. إرسال المنشور الموحد لجميع القنوات
+          # 3. إرسال المنشور الموحد لجميع القنوات (المستخرجة تلقائياً)
           for ID in "${ALL_IDS[@]}"; do
             echo "إرسال المنشور إلى $ID..."
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
                  --data-urlencode "chat_id=$ID" \
                  --data-urlencode "text=$POST_MESSAGE" > /dev/null
-            sleep 1
+            
+            SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
+            echo "انتظار $SLEEP_TIME ثانية قبل القناة التالية..."
+            sleep $SLEEP_TIME
           done
 
-          echo "الانتهاء من المهام. الانتظار لمدة ساعة..."
+          echo "الانتهاء بنجاح. انتظار ساعة واحدة..."
           sleep 3600
           
           echo "إعادة تشغيل الـ Workflow..."
