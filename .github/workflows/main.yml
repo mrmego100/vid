@@ -68,8 +68,8 @@ jobs:
 
           # 1. تحديث المجموعة الأولى (توقيت صباحي/مسائي)
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
-          DAY_START=$(( 17 * 00 ))
-          DAY_END=$(( 6 * 00 ))
+          DAY_START=$(( 6 * 60 ))
+          DAY_END=$(( 18 * 60 ))
 
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
