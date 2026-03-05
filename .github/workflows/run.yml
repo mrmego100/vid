@@ -3,7 +3,7 @@ name: Update Telegram Channels
 on:
   workflow_dispatch: 
 
-# يضمن تشغيل جلسة واحدة فقط وإلغاء أي جلسة سابقة
+# يضمن تشغيل جلسة واحدة فقط وإلغاء أي جلسة سابقة لمنع التداخل
 concurrency:
   group: update-telegram-channels
   cancel-in-progress: true
@@ -27,7 +27,7 @@ jobs:
           retain_days: 0
           keep_minimum_runs: 2
           
-      - name: Update Titles
+      - name: Update Titles and Re-trigger
         run: |
           #!/bin/bash
           
@@ -72,20 +72,23 @@ jobs:
             CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title')
 
             if [ "$CURRENT_TITLE" != "$TARGET_NAME" ]; then
-                echo "تغيير عنوان القناة $CHANNEL_ID..."
+                echo "تغيير عنوان القناة $CHANNEL_ID إلى $TARGET_NAME..."
                 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                      -d chat_id="$CHANNEL_ID" \
                      -d title="$TARGET_NAME" > /dev/null
+            else
+                echo "العنوان الحالي لـ $CHANNEL_ID مطابق للمطلوب."
             fi
             
             sleep 5
           done
 
-          echo "الانتهاء من العملية. انتظار 5 ساعات..."
-          sleep 18000
+          echo "الانتهاء من العملية. انتظار 5 ساعات (18000 ثانية)..."
+          sleep 30
           
-          echo "إعادة تشغيل الـ Workflow..."
-          curl -X POST -H "Authorization: token $GH_TOKEN" \
+          echo "إعادة تشغيل الـ Workflow لإنشاء جلسة جديدة..."
+          curl -X POST \
+          -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/main.yml/dispatches" \
+          "https://api.github.com/repos/${{ github.repository }}/actions/workflows/main.yml/dispatches" \
           -d '{"ref":"main"}'
