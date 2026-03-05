@@ -12,7 +12,7 @@ jobs:
   run-task:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.MY_PAT }} # يفضل استخدام PAT لضمان نجاح إعادة التشغيل
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TZ: Africa/Cairo
     permissions:
@@ -68,8 +68,8 @@ jobs:
 
           # 1. تحديث المجموعة الأولى (توقيت صباحي/مسائي)
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
-          DAY_START=$(( 6 * 60 ))
-          DAY_END=$(( 16 * 60 ))
+          DAY_START=$(( 6 * 00 ))
+          DAY_END=$(( 15 * 00 ))
 
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
@@ -88,8 +88,7 @@ jobs:
           for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do
             NEW_ID="${NEW_CHANNELS[j]}"
             NEW_BASE_NAME="${NEW_CHANNELS[j+1]}"
-            # دمج الاسم مع الوقت
-            FINAL_NAME="$NEW_BASE_NAME | $CURRENT_TIME"
+            FINAL_NAME="$NEW_BASE_NAME $CURRENT_TIME"
 
             echo "تحديث القناة الجديدة: $NEW_ID بالعنوان: $FINAL_NAME"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
@@ -100,7 +99,7 @@ jobs:
           echo "الانتهاء من التحديثات. انتظار 5 ساعات..."
           sleep 30
           
-          echo "إعادة تشغيل الـ Workflow..."
+          echo "إعادة تشغيل الـ Workflow باستخدام GITHUB_TOKEN..."
           curl -X POST \
           -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
