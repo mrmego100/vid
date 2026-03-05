@@ -81,7 +81,7 @@ jobs:
 
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                  -d chat_id="$CHANNEL_ID" -d title="$TARGET_NAME" > /dev/null
-            sleep 5
+            sleep 1
           done
 
           # 2. تحديث المجموعة الثانية (الاسم + الوقت الحالي)
@@ -93,11 +93,11 @@ jobs:
             echo "تحديث القناة الجديدة: $NEW_ID بالعنوان: $FINAL_NAME"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
                  -d chat_id="$NEW_ID" -d title="$FINAL_NAME" > /dev/null
-            sleep 5
+            sleep 1
           done
 
           echo "الانتهاء من التحديثات. انتظار 5 ساعات..."
-          sleep 30
+          sleep 3600
           
           echo "إعادة تشغيل الـ Workflow باستخدام GITHUB_TOKEN..."
           curl -X POST \
