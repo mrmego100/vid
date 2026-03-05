@@ -12,7 +12,7 @@ jobs:
   run-task:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.MY_PAT }} # يفضل استخدام PAT لضمان نجاح إعادة التشغيل
       BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TZ: Africa/Cairo
     permissions:
@@ -33,6 +33,10 @@ jobs:
           
           echo "بدء العملية: $(date)"
 
+          # الحصول على الوقت الحالي لإضافته للأسماء الجديدة
+          CURRENT_TIME=$(date +'%H:%M')
+
+          # --- المجموعة الأولى: 5 قنوات (نظام التوقيت الصباحي والمسائي) ---
           CHANNELS=(
             "@M015_1_6_7_8_9_10_11_12_13_14_15"
             "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش + افراج الحلقة الحلقه 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
@@ -55,38 +59,48 @@ jobs:
             "5الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل"
           )
 
+          # --- المجموعة الثانية: 3 قنوات جديدة (يضاف لها الوقت الحالي) ---
+          NEW_CHANNELS=(
+            "@Channel_ID_1" "اسم القناة الأولى"
+            "@Channel_ID_2" "اسم القناة الثانية"
+            "@Channel_ID_3" "اسم القناة الثالثة"
+          )
+
+          # 1. تحديث المجموعة الأولى (توقيت صباحي/مسائي)
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
           DAY_START=$(( 6 * 60 ))
           DAY_END=$(( 16 * 60 ))
 
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
-            
             if [ "$NOW_MINUTES" -ge "$DAY_START" ] && [ "$NOW_MINUTES" -lt "$DAY_END" ]; then
               TARGET_NAME="${CHANNELS[i+1]}"
             else
               TARGET_NAME="${CHANNELS[i+2]}"
             fi
 
-            CHAT_INFO=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getChat?chat_id=$CHANNEL_ID")
-            CURRENT_TITLE=$(echo "$CHAT_INFO" | jq -r '.result.title')
-
-            if [ "$CURRENT_TITLE" != "$TARGET_NAME" ]; then
-                echo "تغيير عنوان القناة $CHANNEL_ID إلى $TARGET_NAME..."
-                curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
-                     -d chat_id="$CHANNEL_ID" \
-                     -d title="$TARGET_NAME" > /dev/null
-            else
-                echo "العنوان الحالي لـ $CHANNEL_ID مطابق للمطلوب."
-            fi
-            
+            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                 -d chat_id="$CHANNEL_ID" -d title="$TARGET_NAME" > /dev/null
             sleep 5
           done
 
-          echo "الانتهاء من العملية. انتظار 30 دقيقة (1800 ثانية)..."
-          sleep 1800
+          # 2. تحديث المجموعة الثانية (الاسم + الوقت الحالي)
+          for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do
+            NEW_ID="${NEW_CHANNELS[j]}"
+            NEW_BASE_NAME="${NEW_CHANNELS[j+1]}"
+            # دمج الاسم مع الوقت
+            FINAL_NAME="$NEW_BASE_NAME | $CURRENT_TIME"
+
+            echo "تحديث القناة الجديدة: $NEW_ID بالعنوان: $FINAL_NAME"
+            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" \
+                 -d chat_id="$NEW_ID" -d title="$FINAL_NAME" > /dev/null
+            sleep 5
+          done
+
+          echo "الانتهاء من التحديثات. انتظار 5 ساعات..."
+          sleep 30
           
-          echo "إعادة تشغيل الـ Workflow لإنشاء جلسة جديدة..."
+          echo "إعادة تشغيل الـ Workflow..."
           curl -X POST \
           -H "Authorization: token $GH_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
