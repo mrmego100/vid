@@ -1,7 +1,9 @@
 name: Update Telegram Channels
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
+  repository_dispatch:
+    types: [restart-session]
 
 # يضمن تشغيل جلسة واحدة فقط وإلغاء أي جلسة سابقة لمنع التداخل
 concurrency:
@@ -25,9 +27,9 @@ jobs:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 1
           
-      - name: Update Titles, Send Post and Re-trigger
+      - name: Update Titles and Send Posts
         run: |
           #!/bin/bash
           
@@ -81,17 +83,15 @@ jobs:
             "@M03_1_15_16_17_18_19_20_21" "مسلسل إفراج عمرو سعد أفراج الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢,٢٣,٢٤,٢ افراج الحلقه الافراج حلقة الأولي حلقه"
           )
 
-          # --- استخراج جميع المعرفات تلقائياً ---
+          # استخراج المعرفات تلقائياً
           ALL_IDS=()
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do ALL_IDS+=("${CHANNELS[i]}"); done
           for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do ALL_IDS+=("${NEW_CHANNELS[j]}"); done
 
-          echo "تم استخراج المعرفات تلقائياً: ${ALL_IDS[*]}"
-
-          # 1. تحديث عناوين المجموعة الأولى
+          # 1. تحديث المجموعة الأولى
           NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
-          DAY_START=$(( 6 * 60 ))
-          DAY_END=$(( 17 * 60 ))
+          DAY_START=$(( 2 * 60 ))
+          DAY_END=$(( 12 * 60 ))
 
           for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
             CHANNEL_ID="${CHANNELS[i]}"
@@ -100,45 +100,51 @@ jobs:
             else
               TARGET_NAME="${CHANNELS[i+2]}"
             fi
-            echo "تحديث عنوان المجموعة الأولى: $CHANNEL_ID"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" -d chat_id="$CHANNEL_ID" -d title="$TARGET_NAME" > /dev/null
-            
             SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
-            echo "انتظار $SLEEP_TIME ثانية..."
             sleep $SLEEP_TIME
           done
 
-          # 2. تحديث عناوين المجموعة الثانية (إلحاق الوقت)
+          # 2. تحديث المجموعة الثانية
           for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do
             NEW_ID="${NEW_CHANNELS[j]}"
             NEW_BASE_NAME="${NEW_CHANNELS[j+1]}"
             FINAL_NAME="$NEW_BASE_NAME $CURRENT_TIME"
-            echo "تحديث عنوان المجموعة الثانية: $NEW_ID"
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" -d chat_id="$NEW_ID" -d title="$FINAL_NAME" > /dev/null
-            
             SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
-            echo "انتظار $SLEEP_TIME ثانية..."
             sleep $SLEEP_TIME
           done
 
-          # 3. إرسال المنشور الموحد لجميع القنوات (المستخرجة تلقائياً)
+          # 3. إرسال المنشور
           for ID in "${ALL_IDS[@]}"; do
-            echo "إرسال المنشور إلى $ID..."
             curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
                  --data-urlencode "chat_id=$ID" \
                  --data-urlencode "text=$POST_MESSAGE" > /dev/null
-            
             SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
-            echo "انتظار $SLEEP_TIME ثانية قبل القناة التالية..."
             sleep $SLEEP_TIME
           done
 
-          echo "الانتهاء بنجاح. انتظار ساعة واحدة..."
-          sleep 3600
-          
-          echo "إعادة تشغيل الـ Workflow..."
+      - name: Wait & Restart (Perpetual System)
+        if: always()
+        run: |
+          # الانتظار لمدة ساعة (3600 ثانية) مع حماية ضد التوقف
+          python3 - <<'PYTHON'
+          import time, signal, sys
+          stop = False
+          def handler(signum, frame):
+              global stop
+              stop = True
+          signal.signal(signal.SIGTERM, handler)
+          signal.signal(signal.SIGINT, handler)
+          wait_seconds = 3600
+          for _ in range(0, wait_seconds):
+              if stop: sys.exit(0)
+              time.sleep(1)
+          PYTHON
+
+          # إرسال إشارة إعادة التشغيل (Dispatch) لفتح جلسة جديدة فوراً
           curl -X POST \
-          -H "Authorization: token $GH_TOKEN" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.repository }}/actions/workflows/main.yml/dispatches" \
-          -d '{"ref":"main"}'
+            -H "Authorization: token ${{ github.token }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type": "restart-session"}'
