@@ -32,7 +32,6 @@ jobs:
 
       - name: 🚀 Create and Run Script
         env:
-          # سحب التوكن من الـ Secrets في المستودع وإعطائه للسكربت
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib -q
@@ -75,7 +74,6 @@ jobs:
           # دوال إنشاء الفيديو الجديدة
           # ==========================================
           def get_data():
-              # قراءة سجل الفيديوهات السابقة لتجنب التكرار
               history_titles = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -89,7 +87,7 @@ jobs:
                   soup = BeautifulSoup(r.text, 'html.parser')
                   
                   links = soup.find_all('a', href=True)
-                  random.shuffle(links) # خلط الروابط لتنويع الاختيارات
+                  random.shuffle(links)
 
                   for a in links:
                       img = a.find('img')
@@ -97,7 +95,6 @@ jobs:
                       title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
                       if len(title) < 5: continue
                       
-                      # التحقق من أن المسلسل لم يتم رفعه مسبقاً
                       if title in history_titles:
                           continue 
                       
@@ -116,7 +113,7 @@ jobs:
               except Exception as e:
                   return None
               
-              return None # في حال كانت كل الفيديوهات بالصفحة مكررة أو حدث خطأ
+              return None
 
           async def make_audio(text):
               clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
@@ -126,22 +123,26 @@ jobs:
           def create_story(t, d):
               full_story = ""
               current_context = d
-              print(f"🔄 البدء في توليد الملحمة (Target: Long Story)...")
+              print(f"🔄 البدء في توليد الملحمة (Target: 2500 - 3000 words)...")
               
-              for i in range(1, 15): 
+              iteration = 1
+              max_iterations = 50 # حاجز أمان لمنع التكرار اللانهائي
+              
+              # الاستمرار في التوليد حتى نصل لـ 2500 كلمة
+              while len(full_story.split()) < 2500 and iteration <= max_iterations:
                   success = False
-                  for attempt in range(5): # تم زيادة المحاولات إلى 5 لتجنب فشل التوليد
+                  for attempt in range(5):
                       try:
-                          if i == 1:
+                          if iteration == 1:
                               prompt = (f"اكتب بداية ملحمية ومفصلة جداً لقصة درامية بعنوان {t} بناءً على الوصف: {current_context}. "
                                         f"يجب أن تكون باللغة العربية الفصحى، بأسلوب روائي أدبي ثقيل. "
-                                        f"اكتب على الأقل 150 كلمة. "
+                                        f"اكتب فقرة طويلة جداً لا تقل عن 400 كلمة. "
                                         f"ركز على أدق التفاصيل في المشهد الأول، الألوان، الروائح، والمشاعر. "
                                         f"اجعل النص مسترسلاً بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
-                                        f"آخر ما حدث هو: {full_story[-600:]}. "
-                                        f"اكتب على الأقل 150 كلمة. "
+                                        f"آخر ما حدث هو: {full_story[-800:]}. "
+                                        f"اكتب فقرة طويلة جداً لا تقل عن 400 كلمة. "
                                         f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
                                         f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط بدون أرقام أو رموز.")
 
@@ -150,24 +151,33 @@ jobs:
                               messages=[{"role":"user", "content": prompt}]
                           )
                           
-                          # التأكد من أن الرد ليس مجرد رسالة خطأ قصيرة من السيرفر
-                          if response and len(response) > 100:
+                          if response and len(response) > 200:
                               chunk = re.sub(r'[*#\-]', '', response).strip()
                               full_story += " " + chunk
                               success = True
-                              print(f"✅ تم توليد الجزء {i} بنجاح.")
+                              current_words = len(full_story.split())
+                              print(f"✅ تم توليد الجزء {iteration} بنجاح. (إجمالي الكلمات حتى الآن: {current_words})")
                               break
                           else:
-                              print(f"⚠️ استجابة قصيرة في الجزء {i} (محاولة {attempt+1})...")
+                              print(f"⚠️ استجابة قصيرة في الجزء {iteration} (محاولة {attempt+1})...")
                               time.sleep(2)
                       except Exception as e:
-                          print(f"⚠️ محاولة فاشلة في الجزء {i} (محاولة {attempt+1})...")
-                          time.sleep(5) # انتظار لتفادي الـ Rate Limit
+                          print(f"⚠️ محاولة فاشلة في الجزء {iteration} (محاولة {attempt+1})...")
+                          time.sleep(5)
                   
                   if not success:
                       print(f"❌ تعذر استكمال الأجزاء التالية، سيتم الاكتفاء بما تم جمعه.")
                       break
+                      
+                  iteration += 1
                   time.sleep(2) 
+                  
+                  # التأكد من عدم تجاوز الـ 3000 كلمة بكثير
+                  words = full_story.split()
+                  if len(words) >= 3000:
+                      full_story = " ".join(words[:3000])
+                      print(f"✂️ تم الوصول للحد الأقصى وتم ضبط القصة لتكون بحدود 3000 كلمة.")
+                      break
               
               return full_story.strip() if full_story else f"أهلاً بكم في قصة {t}."
 
@@ -193,12 +203,12 @@ jobs:
                   pbar.write(f"🎬 العنوان المستهدف: {t}")
                   pbar.update(1)
 
-                  pbar.set_description("🤖 تأليف الملحمة")
+                  pbar.set_description("🤖 تأليف الملحمة الطويلة")
                   ai_story = create_story(t, data['desc'])
                   fixed_intro = f"أهلاً بكم. قبل البدء إذا كنت مهتم وتريد مشاهدة المسلسل كاملاً فيجب عليك تكملة الفيديو للنهاية لأنني سأضع لك لينك قناتنا على التيلجرام والتى ستجد عليها السلسلة كاملة ومدبلجة. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
                   final_story_text = fixed_intro + ai_story
                   word_count = len(final_story_text.split())
-                  pbar.write(f"📖 الطول النهائي: {word_count} كلمة تقريباً.")
+                  pbar.write(f"📖 الطول النهائي للقصة: {word_count} كلمة.")
                   pbar.update(1)
 
                   pbar.set_description("🎙️ توليد الصوت")
@@ -223,13 +233,13 @@ jobs:
                   pbar.update(1)
                   pbar.write(f"\n✅ تم الانتهاء بنجاح! الرابط: {link}")
                   
-                  return t # نرجع اسم المسلسل عشان خطوة اليوتيوب
+                  return t
 
           # ==========================================
           # حلقة التكرار اللانهائية لإنتاج الفيديوهات تباعاً
           # ==========================================
           SCRIPT_START_TIME = time.time()
-          MAX_RUNTIME_SECONDS = 4 * 60 * 60 # 4 ساعات بالثواني
+          MAX_RUNTIME_SECONDS = 4 * 60 * 60
 
           while True:
               if time.time() - SCRIPT_START_TIME > MAX_RUNTIME_SECONDS:
@@ -243,11 +253,9 @@ jobs:
               print("="*60)
 
               try:
-                  # تشغيل السكربت الجديد داخل الحلقة اللانهائية الأصلية
                   loop = asyncio.get_event_loop()
                   video_title = loop.run_until_complete(start_video_creation())
 
-                  # التحقق من وجود الفيديو ورفعه لليوتيوب
                   if video_title and os.path.exists("out.mp4"):
                       print("\n[6/6] 📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
                       try:
@@ -277,7 +285,6 @@ jobs:
               except Exception as e:
                   print(f"❌ حدث خطأ غير متوقع: {e}")
 
-              # تنظيف كل الملفات المؤقتة الخاصة بالدورة
               for f in os.listdir():
                   if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
                       try: os.remove(f)
@@ -305,4 +312,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "جاري إعادة تشغيل الأكشن لضمان العمل المستمر (Perpetual Dual)..."
-          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }} وارسل لي السكربت كامل بدون نقص
