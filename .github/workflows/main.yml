@@ -1,150 +1,333 @@
-name: Update Telegram Channels
+name: Perpetual Dual
 
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types: [restart-session]
+  schedule:
+    # للتشغيل التلقائي كل 4 ساعات احتياطياً في حال توقف الأكشن
+    - cron: "0 */4 * * *"
 
-# يضمن تشغيل جلسة واحدة فقط وإلغاء أي جلسة سابقة لمنع التداخل
 concurrency:
-  group: update-telegram-channels
+  group: streaming-group
   cancel-in-progress: true
 
 jobs:
-  run-task:
+  stream:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TZ: Africa/Cairo
     permissions:
-      contents: write
       actions: write
+      contents: write
+
     steps:
-      - name: 🧹 Delete Old Workflow Runs
+      - uses: actions/checkout@v4
+
+      - name: 🧹 Delete Old Logs
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 1
-          
-      - name: Update Titles and Send Posts
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 🚀 Create and Run Script
+        env:
+          # سحب التوكن من الـ Secrets في المستودع وإعطائه للسكربت للرفع على يوتيوب
+          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          #!/bin/bash
+          cat << 'EOF' > script.py
+          # ==========================================
+          # 1. استدعاء المكتبات وإعدادات بيئة العمل
+          # ==========================================
+          import os, asyncio, re, warnings, urllib3, requests, time, sys, json
+          import subprocess
+          import importlib.metadata
+          from datetime import datetime, timedelta
+
+          # فحص وتثبيت المكتبات السريع
+          def check_needs_install():
+              try:
+                  if importlib.metadata.version("moviepy") != "1.0.3": return True
+                  importlib.metadata.version("edge_tts")
+                  importlib.metadata.version("g4f")
+                  importlib.metadata.version("nest_asyncio")
+                  importlib.metadata.version("google-api-python-client")
+                  return False
+              except importlib.metadata.PackageNotFoundError:
+                  return True
+
+          if check_needs_install():
+              print("⏳ جاري التثبيت الصاروخي للمكتبات الأساسية...")
+              os.system("sudo apt-get update -qq && sudo apt-get install -y ffmpeg > /dev/null 2>&1")
+              dependencies = [
+                  "requests", "bs4", "moviepy==1.0.3", "g4f", "edge-tts", "tqdm", "nest_asyncio",
+                  "google-api-python-client", "google-auth-httplib2", "google-auth-oauthlib"
+              ]
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-U", "--prefer-binary"] + dependencies)
+              print("✅ تم تجهيز المكتبات بنجاح!")
+
+          # الاستدعاءات بعد التثبيت
+          import nest_asyncio
+          import g4f
+          import edge_tts
+          from bs4 import BeautifulSoup
+          from tqdm import tqdm
+          from moviepy.editor import ImageClip, AudioFileClip
           
-          echo "بدء العملية: $(date)"
+          # استدعاءات يوتيوب
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
 
-          # الحصول على الوقت والتاريخ
-          CURRENT_TIME=$(date +'%H:%M')
-          FULL_DATE_TIME=$(date +'%Y-%m-%d %H:%M:%S')
+          nest_asyncio.apply()
+          urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+          warnings.filterwarnings("ignore", category=UserWarning)
+          os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+          os.environ["SDL_VIDEODRIVER"] = "dummy"
 
-          # تجهيز نص المنشور
-          POST_MESSAGE="استمتع بمشاهدة مسلسلات رمضان بدون إعلانات 
+          HISTORY_FILE = "shows_history.txt"
 
-          على تيليجرام (بدون إعلانات): 
-          ا_ https://t.me/+-qAzKuqhBNdmZTQ0
+          # ==========================================
+          # 2. الدوال الفرعية المخصصة (بدون أي تقليص)
+          # ==========================================
+          def get_data(used_history):
+              base = "https://www.shorttv.live"
+              try:
+                  r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
+                  soup = BeautifulSoup(r.text, 'html.parser')
+                  for a in soup.find_all('a', href=True):
+                      img = a.find('img')
+                      if not img: continue
+                      title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
+                      if len(title) < 5: continue
+                      
+                      # تخطي المسلسل إذا تم عمله سابقاً
+                      if title in used_history: continue
+                      
+                      s_url = a['href'] if a['href'].startswith('http') else base + a['href']
+                      s_page = requests.get(s_url, verify=False, timeout=5)
+                      s_soup = BeautifulSoup(s_page.text, 'html.parser')
+                      meta = s_soup.find('meta', attrs={'name': 'description'})
+                      desc = meta.get('content', '') if meta else "قصة درامية مشوقة"
+                      
+                      i_url = img.get('src') or img.get('data-src')
+                      if i_url.startswith('//'): i_url = "https:" + i_url
+                      
+                      img_data = requests.get(i_url).content
+                      with open("p.jpg", "wb") as f: f.write(img_data)
+                      return {"title": title, "desc": desc}
+              except Exception as e:
+                  return None
+              return None
 
-          من خلال التطبيق (بدون إعلانات): 
-          ا_ https://www.mouseflyby.work/click?offer_id=35027&pub_id=204752&site=MosLsL_app
+          async def make_audio(text):
+              clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
+              communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
+              await communicate.save("v.mp3")
 
-          من خلال الموقع  (بعض الإعلانات): 
-          ا_ https://egydramo.blogspot.com/p/ramdan.html
-          $FULL_DATE_TIME
-          نصيحة: لاتجعل المسلسلات تلهيك عن صلاتك وعباداتك في وقتها، ولا تلهِك عن ذكر الله والطاعات."
+          def create_story(t, d):
+              full_story = ""
+              current_context = d
+              
+              print(f"🔄 البدء في توليد الملحمة (Target: Long Story)...")
+              
+              for i in range(1, 15): 
+                  success = False
+                  for attempt in range(3):
+                      try:
+                          if i == 1:
+                              prompt = (f"اكتب بداية ملحمية ومفصلة جداً لقصة درامية بعنوان {t} بناءً على الوصف: {current_context}. "
+                                        f"يجب أن تكون باللغة العربية الفصحى، بأسلوب روائي أدبي ثقيل. "
+                                        f"ركز على أدق التفاصيل في المشهد الأول، الألوان، الروائح، والمشاعر. "
+                                        f"اجعل النص مسترسلاً بدون أرقام أو رموز.")
+                          else:
+                              prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
+                                        f"آخر ما حدث هو: {full_story[-600:]}. "
+                                        f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
+                                        f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط.")
 
-          # --- المجموعة الأولى: 5 قنوات (تحديث زمني) ---
-          CHANNELS=(
-            "@M015_1_6_7_8_9_10_11_12_13_14_15"
-            "مسلسل الملك + فن الحرب + أصحاب الأرض + المصيدة + درش + افراج الحلقة الحلقه 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
-            "الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل1"
-            
-            "@telebox013"
-            "مسلسل المداح الجزء 6 + الكينج + سوا سوا + عين سحرية + الحلقة + الحلقه + الموسم ٦ + سحريه + سواسوا + الكنج + 1,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
-            "2الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل"
+                          response = g4f.ChatCompletion.create(
+                              model=g4f.models.gpt_4,
+                              messages=[{"role":"user", "content": prompt}]
+                          )
+                          
+                          if response and len(response) > 50:
+                              chunk = re.sub(r'[*#\-]', '', response).strip()
+                              full_story += " " + chunk
+                              success = True
+                              print(f"✅ تم توليد الجزء {i} بنجاح.")
+                              break
+                      except Exception as e:
+                          print(f"⚠️ محاولة فاشلة في الجزء {i} (محاولة {attempt+1})...")
+                          time.sleep(3)
+                  
+                  if not success:
+                      print(f"❌ تعذر استكمال الأجزاء التالية، سيتم الاكتفاء بما تم جمعه.")
+                      break
+                  
+                  time.sleep(1)
+              
+              return full_story.strip() if full_story else f"أهلاً بكم في قصة {t}."
 
-            "@DR_1_2_3_4_5_6_7_8_9_10_11_12_13"
-            "مسلسل وننسي اللي كان .. الحلقة ١,٥,٦,٧,٨,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢ ننسى وننسى اللى الي كان الى كن الحلقة الحلقه ح"
-            "الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل3"
+          def upload_to_catbox(path):
+              try:
+                  url = "https://catbox.moe/user/api.php"
+                  data = {"reqtype": "fileupload"}
+                  with open(path, "rb") as f:
+                      files = {"fileToUpload": f}
+                      response = requests.post(url, data=data, files=files)
+                  return response.text.strip()
+              except: return "Error during upload"
 
-            "@M2_1_5_6_7_8_9_10_11_12_13_14_15"
-            "مسلسل الست موناليزا + افراج + الكينج + سوا سوا + هي كيميا الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١ الحلقه مونليزا هى كيمياء سوسو افرج سوه سوه"
-            "4الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل"
+          # ==========================================
+          # 3. التنفيذ الرئيسي (الحلقة اللانهائية Perpetual Dual)
+          # ==========================================
+          async def start():
+              SCRIPT_START_TIME = time.time()
+              MAX_RUNTIME_SECONDS = 4 * 60 * 60 # 4 ساعات بالثواني
 
-            "@M07_1_6_7_8_9_10_11_12_13_14_15"
-            "مسلسل علي كلاي احمد العوضي على كلاى الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢,٢٣, كلي الحلقه أحمد حلقة الأولي حلقه اليوم"
-            "5الحلقة اليوم حلقة الان الحلقه كاملة حلقه جديدة مسلسل"
-          )
+              while True:
+                  # التحقق من مرور 4 ساعات لإنهاء الجلسة وبدء جلسة جديدة
+                  if time.time() - SCRIPT_START_TIME > MAX_RUNTIME_SECONDS:
+                      print("\n" + "="*60)
+                      print("⏳ اكتملت 4 ساعات من العمل المستمر. سيتم إنهاء الجلسة الحالية وبدء جلسة جديدة...")
+                      print("="*60)
+                      break
 
-          # --- المجموعة الثانية: 3 قنوات (تحديث ثابت + وقت) ---
-          NEW_CHANNELS=(
-            "@M01_1_15_16_17_18_19_20_21" "مسلسل علي كلاي احمد العوضي على كلاى الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢,٢٣, كلي الحلقه أحمد حلقة الأولي حلقه"
-            "@M02_1_15_16_17_18_19_20_21" "مسلسل علي كلاي احمد العوضي على كلاى الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢,٢٣, كلي الحلقه أحمد حلقة الأولي حلقه"
-            "@M03_1_15_16_17_18_19_20_21" "مسلسل إفراج عمرو سعد أفراج الحلقة ١,٩,١٠,١١,١٢,١٣,١٤,١٥,١٦,١٧,١٨,١٩,٢٠,٢١,٢٢,٢٣,٢٤,٢ افراج الحلقه الافراج حلقة الأولي حلقه"
-          )
+                  print("\n" + "="*60)
+                  print("🔄 بدء دورة جديدة لإنتاج فيديو...")
+                  print("="*60)
 
-          # استخراج المعرفات تلقائياً
-          ALL_IDS=()
-          for ((i=0; i<${#CHANNELS[@]}; i+=3)); do ALL_IDS+=("${CHANNELS[i]}"); done
-          for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do ALL_IDS+=("${NEW_CHANNELS[j]}"); done
+                  # قراءة السجل
+                  used_history = {}
+                  if os.path.exists(HISTORY_FILE):
+                      with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                          for line in f:
+                              parts = line.strip().split('|')
+                              if len(parts) >= 1:
+                                  used_history[parts[0]] = True
 
-          # 1. تحديث المجموعة الأولى
-          NOW_MINUTES=$(( $(date +'%H') * 60 + $(date +'%M') ))
-          DAY_START=$(( 2 * 60 ))
-          DAY_END=$(( 12 * 60 ))
+                  # الخطوة 1: البحث وجلب البيانات
+                  data = get_data(used_history)
+                  if not data: 
+                      print("❌ لم يتم العثور على مسلسلات جديدة للعمل عليها، سيتم الانتظار 30 ثانية والمحاولة مجدداً.")
+                      time.sleep(30)
+                      continue
+                  
+                  t = data['title']
+                  desc = data['desc']
+                  print(f"🎬 العنوان المستهدف: {t}")
 
-          for ((i=0; i<${#CHANNELS[@]}; i+=3)); do
-            CHANNEL_ID="${CHANNELS[i]}"
-            if [ "$NOW_MINUTES" -ge "$DAY_START" ] && [ "$NOW_MINUTES" -lt "$DAY_END" ]; then
-              TARGET_NAME="${CHANNELS[i+1]}"
-            else
-              TARGET_NAME="${CHANNELS[i+2]}"
-            fi
-            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" -d chat_id="$CHANNEL_ID" -d title="$TARGET_NAME" > /dev/null
-            SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
-            sleep $SLEEP_TIME
-          done
+                  # الخطوة 2: الذكاء الاصطناعي
+                  print("🤖 تأليف الملحمة...")
+                  ai_story = create_story(t, desc)
+                  
+                  fixed_intro = f"أهلاً بكم. قبل البدء إذا كنت مهتم وتريد مشاهدة المسلسل كاملاً فيجب عليك تكملة الفيديو للنهاية لأنني سأضع لك لينك قناتنا على التيلجرام والتى ستجد عليها السلسلة كاملة ومدبلجة. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
+                  final_story_text = fixed_intro + ai_story
+                  
+                  word_count = len(final_story_text.split())
+                  print(f"📖 الطول النهائي: {word_count} كلمة تقريباً.")
 
-          # 2. تحديث المجموعة الثانية
-          for ((j=0; j<${#NEW_CHANNELS[@]}; j+=2)); do
-            NEW_ID="${NEW_CHANNELS[j]}"
-            NEW_BASE_NAME="${NEW_CHANNELS[j+1]}"
-            FINAL_NAME="$NEW_BASE_NAME $CURRENT_TIME"
-            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setChatTitle" -d chat_id="$NEW_ID" -d title="$FINAL_NAME" > /dev/null
-            SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
-            sleep $SLEEP_TIME
-          done
+                  # الخطوة 3: الصوت
+                  print("🎙️ توليد الصوت...")
+                  await make_audio(final_story_text)
 
-          # 3. إرسال المنشور
-          for ID in "${ALL_IDS[@]}"; do
-            curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-                 --data-urlencode "chat_id=$ID" \
-                 --data-urlencode "text=$POST_MESSAGE" > /dev/null
-            SLEEP_TIME=$(( (RANDOM % 121) + 60 ))
-            sleep $SLEEP_TIME
-          done
+                  # الخطوة 4: المونتاج
+                  print("🎬 مونتاج الفيديو (يرجى الانتظار)...")
+                  final_v = "out.mp4"
+                  try:
+                      aud = AudioFileClip("v.mp3")
+                      vid = ImageClip("p.jpg").set_duration(aud.duration).set_audio(aud).set_fps(24)
+                      vid = vid.resize(height=720) 
+                      
+                      vid.write_videofile(final_v, 
+                                          codec="libx264", 
+                                          audio_codec="aac", 
+                                          temp_audiofile='temp-audio.m4a', 
+                                          remove_temp=True, 
+                                          verbose=False, 
+                                          logger=None)
+                      aud.close(); vid.close()
+                      print("✅ تم الانتهاء من رندر الفيديو بنجاح!")
+                  except Exception as e:
+                      print(f"Video Error: {e}")
+                      continue
 
-      - name: Wait & Restart (Perpetual System)
-        if: always()
+                  # الخطوة 5: الرفع لـ Catbox
+                  print("☁️ جاري الرفع إلى Catbox...")
+                  link = upload_to_catbox(final_v)
+                  if link and link != "Error during upload":
+                      print(f"✅ رابط Catbox: {link}")
+
+                  # الخطوة 6: الرفع لـ يوتيوب
+                  print("📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
+                  try:
+                      if 'YOUTUBE_CREDENTIALS' in os.environ and os.environ['YOUTUBE_CREDENTIALS'].strip() != "":
+                          creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
+                          creds = Credentials.from_authorized_user_info(creds_data)
+                          youtube = build('youtube', 'v3', credentials=creds)
+                          
+                          video_number = len(used_history) + 1
+                          raw_yt_title = f"{t} السلسلة الكاملة والمدبلجة بالعربي "
+                          if not raw_yt_title.strip(): raw_yt_title = f"#{video_number}"
+                          if len(raw_yt_title) > 95: raw_yt_title = raw_yt_title[:95] + "..."
+
+                          body = {
+                              'snippet': {
+                                  'title': raw_yt_title, 
+                                  'description': f'ملخص ومراجعة مسلسل {t}\n\nرابط إضافي: {link}', 
+                                  'categoryId': '24'
+                              },
+                              'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                          }
+                          media = MediaFileUpload(final_v, chunksize=-1, resumable=True)
+                          response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
+                          print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
+                      else:
+                          print("⚠️ لم يتم العثور على YOUTUBE_CREDENTIALS في Secrets. تم التخطي.")
+                      
+                      # تسجيل المسلسل في الهيستوري بمجرد الانتهاء
+                      with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                          f.write(f"{t}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                  except Exception as e:
+                      print(f"❌ فشل يوتيوب: {e}")
+                      # تسجيله حتى وإن فشل يوتيوب لتجنب تكرار فشله
+                      with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                          f.write(f"{t}|{datetime.now().strftime('%Y-%m-%d')}\n")
+
+                  # تنظيف كل الملفات المؤقتة
+                  for f in ["p.jpg", "v.mp3", "out.mp4", "temp-audio.m4a"]:
+                      if os.path.exists(f):
+                          try: os.remove(f)
+                          except: pass
+
+                  print("\n" + "="*50)
+                  print(f"✅ تم الانتهاء بنجاح من مسلسل: {t}!")
+                  print("⏳ جاري الانتظار 60 ثانية قبل البدء في إنتاج الفيديو التالي...")
+                  print("="*50)
+                  
+                  time.sleep(6)
+
+          if __name__ == "__main__":
+              loop = asyncio.get_event_loop()
+              loop.run_until_complete(start())
+          EOF
+          python script.py
+
+      - name: 💾 Commit History to Repository
         run: |
-          # الانتظار لمدة ساعة (3600 ثانية) مع حماية ضد التوقف
-          python3 - <<'PYTHON'
-          import time, signal, sys
-          stop = False
-          def handler(signum, frame):
-              global stop
-              stop = True
-          signal.signal(signal.SIGTERM, handler)
-          signal.signal(signal.SIGINT, handler)
-          wait_seconds = 3600
-          for _ in range(0, wait_seconds):
-              if stop: sys.exit(0)
-              time.sleep(1)
-          PYTHON
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add shows_history.txt || true
+          git commit -m "📝 Update trends history" || true
+          git push || true
 
-          # إرسال إشارة إعادة التشغيل (Dispatch) لفتح جلسة جديدة فوراً
-          curl -X POST \
-            -H "Authorization: token ${{ github.token }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/dispatches \
-            -d '{"event_type": "restart-session"}'
+      - name: ⏳ Workflow Persistence (Auto-restart)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "جاري إعادة تشغيل الأكشن لضمان العمل المستمر (Perpetual Dual)..."
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
