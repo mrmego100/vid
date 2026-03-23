@@ -35,7 +35,7 @@ jobs:
           # سحب التوكن من الـ Secrets في المستودع وإعطائه للسكربت
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          pip install requests bs4 moviepy g4f edge-tts tqdm nest_asyncio -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib -q
           
           cat << 'EOF' > script.py
           # ==========================================
