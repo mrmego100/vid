@@ -47,6 +47,13 @@ jobs:
           import edge_tts
           from bs4 import BeautifulSoup
           from tqdm import tqdm
+
+          # --- حل مشكلة PIL.Image.ANTIALIAS مع MoviePy ---
+          import PIL.Image
+          if not hasattr(PIL.Image, 'ANTIALIAS'):
+              PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+          # -----------------------------------------------
+
           from moviepy.editor import ImageClip, AudioFileClip
           from datetime import datetime, timedelta
           from google.oauth2.credentials import Credentials
