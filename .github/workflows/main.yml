@@ -36,176 +36,228 @@ jobs:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
           pip install requests bs4 moviepy g4f edge-tts tqdm nest_asyncio -q
+          
           cat << 'EOF' > script.py
-          def run_automated_video_system():
-              # --- 1. استدعاء المكتبات بالداخل ---
-              import os, asyncio, re, warnings, urllib3, requests, time
-              import nest_asyncio
-              import g4f
-              import edge_tts
-              from bs4 import BeautifulSoup
-              from tqdm import tqdm
-              from moviepy.editor import ImageClip, AudioFileClip
-              from moviepy.config import change_settings
+          # ==========================================
+          # استدعاء جميع المكتبات
+          # ==========================================
+          import os, asyncio, re, warnings, urllib3, requests, time, gc, json
+          import nest_asyncio
+          import g4f
+          import edge_tts
+          from bs4 import BeautifulSoup
+          from tqdm import tqdm
+          from moviepy.editor import ImageClip, AudioFileClip
+          from datetime import datetime, timedelta
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
 
-              # --- 2. إعدادات بيئة العمل ---
-              nest_asyncio.apply()
-              urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-              warnings.filterwarnings("ignore", category=UserWarning)
-              os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+          # ==========================================
+          # إعدادات بيئة العمل
+          # ==========================================
+          nest_asyncio.apply()
+          urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+          warnings.filterwarnings("ignore", category=UserWarning)
+          os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+          os.environ["SDL_VIDEODRIVER"] = "dummy"
 
-              # --- 3. الدوال الفرعية ---
-              def get_data():
-                  base = "https://www.shorttv.live"
-                  try:
-                      r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
-                      soup = BeautifulSoup(r.text, 'html.parser')
-                      for a in soup.find_all('a', href=True):
-                          img = a.find('img')
-                          if not img: continue
-                          title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
-                          if len(title) < 5: continue
-                          
-                          s_url = a['href'] if a['href'].startswith('http') else base + a['href']
-                          s_page = requests.get(s_url, verify=False, timeout=5)
-                          s_soup = BeautifulSoup(s_page.text, 'html.parser')
-                          meta = s_soup.find('meta', attrs={'name': 'description'})
-                          desc = meta.get('content', '') if meta else "قصة درامية مشوقة"
-                          
-                          i_url = img.get('src') or img.get('data-src')
-                          if i_url.startswith('//'): i_url = "https:" + i_url
-                          
-                          img_data = requests.get(i_url).content
-                          with open("p.jpg", "wb") as f: f.write(img_data)
-                          return {"title": title, "desc": desc}
-                  except Exception as e:
-                      return None
+          HISTORY_FILE = "shows_history.txt"
 
-              async def make_audio(text):
-                  # تنظيف النص لضمان جودة النطق وتجنب الرموز
-                  # تقسيم النص الطويل جداً إلى أجزاء إذا تجاوز الحدود القصوى لـ edge-tts
-                  clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
-                  communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
-                  await communicate.save("v.mp3")
-
-              def create_story(t, d):
-                  full_story = ""
-                  current_context = d
-                  
-                  print(f"🔄 البدء في توليد الملحمة (Target: Long Story)...")
-                  
-                  # زيادة عدد الأجزاء للحصول على أطول نص ممكن
-                  for i in range(1, 15): 
-                      success = False
-                      for attempt in range(3): # محاولة 3 مرات لكل جزء في حال فشل المزود
-                          try:
-                              if i == 1:
-                                  prompt = (f"اكتب بداية ملحمية ومفصلة جداً لقصة درامية بعنوان {t} بناءً على الوصف: {current_context}. "
-                                            f"يجب أن تكون باللغة العربية الفصحى، بأسلوب روائي أدبي ثقيل. "
-                                            f"ركز على أدق التفاصيل في المشهد الأول، الألوان، الروائح، والمشاعر. "
-                                            f"اجعل النص مسترسلاً بدون أرقام أو رموز.")
-                              else:
-                                  prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
-                                            f"آخر ما حدث هو: {full_story[-600:]}. "
-                                            f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
-                                            f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط.")
-
-                              response = g4f.ChatCompletion.create(
-                                  model=g4f.models.gpt_4, # استخدام الموديل بشكل أكثر مرونة
-                                  messages=[{"role":"user", "content": prompt}]
-                              )
-                              
-                              if response and len(response) > 50:
-                                  chunk = re.sub(r'[*#\-]', '', response).strip()
-                                  full_story += " " + chunk
-                                  success = True
-                                  print(f"✅ تم توليد الجزء {i} بنجاح.")
-                                  break
-                          except Exception as e:
-                              print(f"⚠️ محاولة فاشلة في الجزء {i} (محاولة {attempt+1})...")
-                              time.sleep(3)
+          # ==========================================
+          # دوال إنشاء الفيديو الجديدة (التي طلبتها)
+          # ==========================================
+          def get_data():
+              base = "https://www.shorttv.live"
+              try:
+                  r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
+                  soup = BeautifulSoup(r.text, 'html.parser')
+                  for a in soup.find_all('a', href=True):
+                      img = a.find('img')
+                      if not img: continue
+                      title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
+                      if len(title) < 5: continue
                       
-                      if not success:
-                          print(f"❌ تعذر استكمال الأجزاء التالية، سيتم الاكتفاء بما تم جمعه.")
-                          break
+                      s_url = a['href'] if a['href'].startswith('http') else base + a['href']
+                      s_page = requests.get(s_url, verify=False, timeout=5)
+                      s_soup = BeautifulSoup(s_page.text, 'html.parser')
+                      meta = s_soup.find('meta', attrs={'name': 'description'})
+                      desc = meta.get('content', '') if meta else "قصة درامية مشوقة"
                       
-                      time.sleep(1) # راحة للمزود
-                  
-                  return full_story.strip() if full_story else f"أهلاً بكم في قصة {t}."
-
-              def upload_to_catbox(path):
-                  try:
-                      url = "https://catbox.moe/user/api.php"
-                      data = {"reqtype": "fileupload"}
-                      with open(path, "rb") as f:
-                          files = {"fileToUpload": f}
-                          response = requests.post(url, data=data, files=files)
-                      return response.text.strip()
-                  except: return "Error during upload"
-
-              # --- 4. التنفيذ الرئيسي ---
-              async def start():
-                  with tqdm(total=5, desc="🚀 العمل جاري", unit="step", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]') as pbar:
+                      i_url = img.get('src') or img.get('data-src')
+                      if i_url.startswith('//'): i_url = "https:" + i_url
                       
-                      # الخطوة 1: البحث
-                      pbar.set_description("🔍 جلب البيانات")
-                      data = get_data()
-                      if not data: 
-                          pbar.write("❌ فشل في جلب البيانات.")
-                          return
-                      
-                      t = data['title']
-                      pbar.write(f"🎬 العنوان المستهدف: {t}")
-                      pbar.update(1)
+                      img_data = requests.get(i_url).content
+                      with open("p.jpg", "wb") as f: f.write(img_data)
+                      return {"title": title, "desc": desc}
+              except Exception as e:
+                  return None
 
-                      # الخطوة 2: الذكاء الاصطناعي
-                      pbar.set_description("🤖 تأليف الملحمة")
-                      ai_story = create_story(t, data['desc'])
-                      
-                      fixed_intro = f"أهلاً بكم. قبل البدء إذا كنت مهتم وتريد مشاهدة المسلسل كاملاً فيجب عليك تكملة الفيديو للنهاية لأنني سأضع لك لينك قناتنا على التيلجرام والتى ستجد عليها السلسلة كاملة ومدبلجة. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
-                      final_story_text = fixed_intro + ai_story
-                      
-                      word_count = len(final_story_text.split())
-                      pbar.write(f"📖 الطول النهائي: {word_count} كلمة تقريباً.")
-                      pbar.update(1)
+          async def make_audio(text):
+              clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
+              communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
+              await communicate.save("v.mp3")
 
-                      # الخطوة 3: الصوت
-                      pbar.set_description("🎙️ توليد الصوت")
-                      await make_audio(final_story_text)
-                      pbar.update(1)
-
-                      # الخطوة 4: المونتاج
-                      pbar.set_description("🎬 مونتاج الفيديو")
+          def create_story(t, d):
+              full_story = ""
+              current_context = d
+              print(f"🔄 البدء في توليد الملحمة (Target: Long Story)...")
+              
+              for i in range(1, 15): 
+                  success = False
+                  for attempt in range(3): 
                       try:
-                          aud = AudioFileClip("v.mp3")
-                          vid = ImageClip("p.jpg").set_duration(aud.duration).set_audio(aud).set_fps(24)
-                          vid = vid.resize(height=720) 
+                          if i == 1:
+                              prompt = (f"اكتب بداية ملحمية ومفصلة جداً لقصة درامية بعنوان {t} بناءً على الوصف: {current_context}. "
+                                        f"يجب أن تكون باللغة العربية الفصحى، بأسلوب روائي أدبي ثقيل. "
+                                        f"ركز على أدق التفاصيل في المشهد الأول، الألوان، الروائح، والمشاعر. "
+                                        f"اجعل النص مسترسلاً بدون أرقام أو رموز.")
+                          else:
+                              prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
+                                        f"آخر ما حدث هو: {full_story[-600:]}. "
+                                        f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
+                                        f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط.")
+
+                          response = g4f.ChatCompletion.create(
+                              model=g4f.models.gpt_4,
+                              messages=[{"role":"user", "content": prompt}]
+                          )
                           
-                          vid.write_videofile("out.mp4", 
-                                              codec="libx264", 
-                                              audio_codec="aac", 
-                                              temp_audiofile='temp-audio.m4a', 
-                                              remove_temp=True, 
-                                              verbose=False, 
-                                              logger=None)
-                          aud.close(); vid.close()
+                          if response and len(response) > 50:
+                              chunk = re.sub(r'[*#\-]', '', response).strip()
+                              full_story += " " + chunk
+                              success = True
+                              print(f"✅ تم توليد الجزء {i} بنجاح.")
+                              break
                       except Exception as e:
-                          pbar.write(f"Video Error: {e}")
-                      pbar.update(1)
+                          print(f"⚠️ محاولة فاشلة في الجزء {i} (محاولة {attempt+1})...")
+                          time.sleep(3)
+                  
+                  if not success:
+                      print(f"❌ تعذر استكمال الأجزاء التالية، سيتم الاكتفاء بما تم جمعه.")
+                      break
+                  time.sleep(1) 
+              
+              return full_story.strip() if full_story else f"أهلاً بكم في قصة {t}."
 
-                      # الخطوة 5: الرفع
-                      pbar.set_description("☁️ رفع الفيديو")
-                      link = upload_to_catbox("out.mp4")
-                      pbar.update(1)
+          def upload_to_catbox(path):
+              try:
+                  url = "https://catbox.moe/user/api.php"
+                  data = {"reqtype": "fileupload"}
+                  with open(path, "rb") as f:
+                      files = {"fileToUpload": f}
+                      response = requests.post(url, data=data, files=files)
+                  return response.text.strip()
+              except: return "Error during upload"
 
-                      pbar.write(f"\n✅ تم الانتهاء بنجاح! الرابط: {link}")
+          async def start_video_creation():
+              with tqdm(total=5, desc="🚀 العمل جاري", unit="step", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]') as pbar:
+                  pbar.set_description("🔍 جلب البيانات")
+                  data = get_data()
+                  if not data: 
+                      pbar.write("❌ فشل في جلب البيانات.")
+                      return None
+                  
+                  t = data['title']
+                  pbar.write(f"🎬 العنوان المستهدف: {t}")
+                  pbar.update(1)
 
-              # تشغيل الحلقة
-              loop = asyncio.get_event_loop()
-              loop.run_until_complete(start())
+                  pbar.set_description("🤖 تأليف الملحمة")
+                  ai_story = create_story(t, data['desc'])
+                  fixed_intro = f"أهلاً بكم. قبل البدء إذا كنت مهتم وتريد مشاهدة المسلسل كاملاً فيجب عليك تكملة الفيديو للنهاية لأنني سأضع لك لينك قناتنا على التيلجرام والتى ستجد عليها السلسلة كاملة ومدبلجة. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
+                  final_story_text = fixed_intro + ai_story
+                  word_count = len(final_story_text.split())
+                  pbar.write(f"📖 الطول النهائي: {word_count} كلمة تقريباً.")
+                  pbar.update(1)
 
-          if __name__ == "__main__":
-              run_automated_video_system()
+                  pbar.set_description("🎙️ توليد الصوت")
+                  await make_audio(final_story_text)
+                  pbar.update(1)
+
+                  pbar.set_description("🎬 مونتاج الفيديو")
+                  final_video_name = "out.mp4"
+                  try:
+                      aud = AudioFileClip("v.mp3")
+                      vid = ImageClip("p.jpg").set_duration(aud.duration).set_audio(aud).set_fps(24)
+                      vid = vid.resize(height=720) 
+                      vid.write_videofile(final_video_name, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
+                      aud.close(); vid.close()
+                  except Exception as e:
+                      pbar.write(f"Video Error: {e}")
+                      return None
+                  pbar.update(1)
+
+                  pbar.set_description("☁️ رفع الفيديو")
+                  link = upload_to_catbox(final_video_name)
+                  pbar.update(1)
+                  pbar.write(f"\n✅ تم الانتهاء بنجاح! الرابط: {link}")
+                  
+                  return t # نرجع اسم المسلسل عشان خطوة اليوتيوب
+
+          # ==========================================
+          # حلقة التكرار اللانهائية لإنتاج الفيديوهات تباعاً
+          # ==========================================
+          SCRIPT_START_TIME = time.time()
+          MAX_RUNTIME_SECONDS = 4 * 60 * 60 # 4 ساعات بالثواني
+
+          while True:
+              if time.time() - SCRIPT_START_TIME > MAX_RUNTIME_SECONDS:
+                  print("\n" + "="*60)
+                  print("⏳ اكتملت 4 ساعات من العمل المستمر. سيتم إنهاء الجلسة الحالية وبدء جلسة جديدة...")
+                  print("="*60)
+                  break
+
+              print("\n" + "="*60)
+              print("🔄 بدء دورة جديدة لإنتاج فيديو...")
+              print("="*60)
+
+              try:
+                  # تشغيل السكربت الجديد داخل الحلقة اللانهائية الأصلية
+                  loop = asyncio.get_event_loop()
+                  video_title = loop.run_until_complete(start_video_creation())
+
+                  # التحقق من وجود الفيديو ورفعه لليوتيوب
+                  if video_title and os.path.exists("out.mp4"):
+                      print("\n[6/6] 📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
+                      try:
+                          if 'YOUTUBE_CREDENTIALS' in os.environ:
+                              creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
+                              creds = Credentials.from_authorized_user_info(creds_data)
+                              youtube = build('youtube', 'v3', credentials=creds)
+                              video_number = len(open(HISTORY_FILE).readlines()) if os.path.exists(HISTORY_FILE) else 1
+
+                              raw_yt_title = f"{video_title} السلسلة الكاملة والمدبلجة بالعربي "
+                              if not raw_yt_title.strip(): raw_yt_title = f"#{video_number}"
+                              if len(raw_yt_title) > 95: raw_yt_title = raw_yt_title[:95] + "..."
+
+                              body = {
+                                  'snippet': {'title': raw_yt_title, 'description': f'ملخص ومراجعة مسلسل {video_title}', 'categoryId': '24'},
+                                  'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                              }
+                              media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
+                              response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
+                              print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
+
+                              with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                                  f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                      except Exception as e:
+                          print(f"❌ فشل يوتيوب: {e}")
+
+              except Exception as e:
+                  print(f"❌ حدث خطأ غير متوقع: {e}")
+
+              # تنظيف كل الملفات المؤقتة الخاصة بالدورة
+              for f in os.listdir():
+                  if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
+                      try: os.remove(f)
+                      except: pass
+
+              print("\n" + "="*50)
+              print("✅ تم الانتهاء من الدورة الحالية!")
+              print("⏳ جاري الانتظار 60 ثانية قبل البدء في إنتاج الفيديو التالي...")
+              print("="*50)
+
+              time.sleep(60)
           EOF
           python script.py
 
