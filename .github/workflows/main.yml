@@ -41,7 +41,7 @@ jobs:
           # ==========================================
           # استدعاء جميع المكتبات
           # ==========================================
-          import os, asyncio, re, warnings, urllib3, requests, time, gc, json
+          import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
           import nest_asyncio
           import g4f
           import edge_tts
@@ -72,18 +72,34 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # ==========================================
-          # دوال إنشاء الفيديو الجديدة (التي طلبتها)
+          # دوال إنشاء الفيديو الجديدة
           # ==========================================
           def get_data():
+              # قراءة سجل الفيديوهات السابقة لتجنب التكرار
+              history_titles = []
+              if os.path.exists(HISTORY_FILE):
+                  with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                      for line in f:
+                          if "|" in line:
+                              history_titles.append(line.split("|")[0].strip())
+
               base = "https://www.shorttv.live"
               try:
                   r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
                   soup = BeautifulSoup(r.text, 'html.parser')
-                  for a in soup.find_all('a', href=True):
+                  
+                  links = soup.find_all('a', href=True)
+                  random.shuffle(links) # خلط الروابط لتنويع الاختيارات
+
+                  for a in links:
                       img = a.find('img')
                       if not img: continue
                       title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
                       if len(title) < 5: continue
+                      
+                      # التحقق من أن المسلسل لم يتم رفعه مسبقاً
+                      if title in history_titles:
+                          continue 
                       
                       s_url = a['href'] if a['href'].startswith('http') else base + a['href']
                       s_page = requests.get(s_url, verify=False, timeout=5)
@@ -99,6 +115,8 @@ jobs:
                       return {"title": title, "desc": desc}
               except Exception as e:
                   return None
+              
+              return None # في حال كانت كل الفيديوهات بالصفحة مكررة أو حدث خطأ
 
           async def make_audio(text):
               clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
@@ -112,38 +130,44 @@ jobs:
               
               for i in range(1, 15): 
                   success = False
-                  for attempt in range(3): 
+                  for attempt in range(5): # تم زيادة المحاولات إلى 5 لتجنب فشل التوليد
                       try:
                           if i == 1:
                               prompt = (f"اكتب بداية ملحمية ومفصلة جداً لقصة درامية بعنوان {t} بناءً على الوصف: {current_context}. "
                                         f"يجب أن تكون باللغة العربية الفصحى، بأسلوب روائي أدبي ثقيل. "
+                                        f"اكتب على الأقل 150 كلمة. "
                                         f"ركز على أدق التفاصيل في المشهد الأول، الألوان، الروائح، والمشاعر. "
                                         f"اجعل النص مسترسلاً بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
                                         f"آخر ما حدث هو: {full_story[-600:]}. "
+                                        f"اكتب على الأقل 150 كلمة. "
                                         f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
-                                        f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط.")
+                                        f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط بدون أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
                               model=g4f.models.gpt_4,
                               messages=[{"role":"user", "content": prompt}]
                           )
                           
-                          if response and len(response) > 50:
+                          # التأكد من أن الرد ليس مجرد رسالة خطأ قصيرة من السيرفر
+                          if response and len(response) > 100:
                               chunk = re.sub(r'[*#\-]', '', response).strip()
                               full_story += " " + chunk
                               success = True
                               print(f"✅ تم توليد الجزء {i} بنجاح.")
                               break
+                          else:
+                              print(f"⚠️ استجابة قصيرة في الجزء {i} (محاولة {attempt+1})...")
+                              time.sleep(2)
                       except Exception as e:
                           print(f"⚠️ محاولة فاشلة في الجزء {i} (محاولة {attempt+1})...")
-                          time.sleep(3)
+                          time.sleep(5) # انتظار لتفادي الـ Rate Limit
                   
                   if not success:
                       print(f"❌ تعذر استكمال الأجزاء التالية، سيتم الاكتفاء بما تم جمعه.")
                       break
-                  time.sleep(1) 
+                  time.sleep(2) 
               
               return full_story.strip() if full_story else f"أهلاً بكم في قصة {t}."
 
@@ -162,7 +186,7 @@ jobs:
                   pbar.set_description("🔍 جلب البيانات")
                   data = get_data()
                   if not data: 
-                      pbar.write("❌ فشل في جلب البيانات.")
+                      pbar.write("❌ فشل في جلب البيانات، إما بسبب التكرار أو خطأ في الاتصال.")
                       return None
                   
                   t = data['title']
