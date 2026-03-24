@@ -312,4 +312,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "جاري إعادة تشغيل الأكشن لضمان العمل المستمر (Perpetual Dual)..."
-          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }} وارسل لي السكربت كامل بدون نقص
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
