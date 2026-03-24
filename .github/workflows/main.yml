@@ -179,7 +179,7 @@ jobs:
                       print(f"✂️ تم الوصول للحد الأقصى وتم ضبط القصة لتكون بحدود 3000 كلمة.")
                       break
               
-              return full_story.strip() if full_story else f"أهلاً بكم في قصة {t}."
+              return full_story.strip() if full_story else f"ملخص من وحي الخيال من قصة مسلسل  {t}."
 
           def upload_to_catbox(path):
               try:
@@ -205,7 +205,7 @@ jobs:
 
                   pbar.set_description("🤖 تأليف الملحمة الطويلة")
                   ai_story = create_story(t, data['desc'])
-                  fixed_intro = f"أهلاً بكم. قبل البدء إذا كنت مهتم وتريد مشاهدة المسلسل كاملاً فيجب عليك تكملة الفيديو للنهاية لأنني سأضع لك لينك قناتنا على التيلجرام والتى ستجد عليها السلسلة كاملة ومدبلجة. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
+                  fixed_intro = f"أهلاً بكم. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
                   final_story_text = fixed_intro + ai_story
                   word_count = len(final_story_text.split())
                   pbar.write(f"📖 الطول النهائي للقصة: {word_count} كلمة.")
