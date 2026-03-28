@@ -327,4 +327,3 @@ jobs:
         run: |
           echo "جاري إعادة تشغيل الأكشن لضمان العمل المستمر (Perpetual Dual)..."
           gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
-          
