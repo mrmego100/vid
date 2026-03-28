@@ -34,7 +34,7 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy -q
           
           cat << 'EOF' > script.py
           # ==========================================
@@ -46,6 +46,7 @@ jobs:
           import edge_tts
           from bs4 import BeautifulSoup
           from tqdm import tqdm
+          import numpy as np
 
           # --- حل مشكلة PIL.Image.ANTIALIAS مع MoviePy ---
           import PIL.Image
@@ -53,7 +54,7 @@ jobs:
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
           # -----------------------------------------------
 
-          from moviepy.editor import ImageClip, AudioFileClip
+          from moviepy.editor import ImageClip, AudioFileClip, ImageSequenceClip
           from datetime import datetime, timedelta
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
@@ -77,9 +78,9 @@ jobs:
               history_titles = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                      for line in f:
-                          if "|" in line:
-                              history_titles.append(line.split("|")[0].strip())
+                          for line in f:
+                              if "|" in line:
+                                  history_titles.append(line.split("|")[0].strip())
 
               base = "https://www.shorttv.live"
               try:
@@ -95,6 +96,7 @@ jobs:
                       title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
                       if len(title) < 5: continue
                       
+                      # التحقق من أن الفيديو لم يتم عمله من قبل
                       if title in history_titles:
                           continue 
                       
@@ -128,7 +130,6 @@ jobs:
               iteration = 1
               max_iterations = 50 # حاجز أمان لمنع التكرار اللانهائي
               
-              # الاستمرار في التوليد حتى نصل لـ 2500 كلمة
               while len(full_story.split()) < 2500 and iteration <= max_iterations:
                   success = False
                   for attempt in range(5):
@@ -215,20 +216,37 @@ jobs:
                   await make_audio(final_story_text)
                   pbar.update(1)
 
-                  pbar.set_description("🎬 مونتاج الفيديو")
+                  pbar.set_description("🎬 مونتاج الفيديو مع تأثير الثلج/الحبيبات")
                   final_video_name = "out.mp4"
                   try:
                       aud = AudioFileClip("v.mp3")
-                      vid = ImageClip("p.jpg").set_duration(aud.duration).set_audio(aud).set_fps(24)
-                      vid = vid.resize(height=720) 
-                      vid.write_videofile(final_video_name, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
-                      aud.close(); vid.close()
+                      base_vid = ImageClip("p.jpg").resize(height=720)
+                      
+                      # إنشاء تأثير الحبيبات والثلج السينمائي الأنيق (Film Grain Effect)
+                      w, h = base_vid.w, base_vid.h
+                      noise_frames = []
+                      for _ in range(10):  # توليد 10 إطارات عشوائية
+                          noise = np.random.randint(0, 45, (h, w, 3), dtype=np.uint8)
+                          noise_frames.append(noise)
+                      
+                      def add_grain_effect(get_frame, time_pos):
+                          frame = get_frame(time_pos)
+                          idx = int(time_pos * 15) % 10  # التبديل بين الإطارات لإعطاء تأثير متحرك
+                          noise = noise_frames[idx]
+                          # دمج خفيف للصورة مع الحبيبات لتبدو أنيقة وغير مزعجة
+                          return np.clip(frame + noise * 0.35, 0, 255).astype(np.uint8)
+
+                      vid = base_vid.set_duration(aud.duration).fl(add_grain_effect).set_audio(aud)
+                      
+                      # استخدام fps=15 لتسريع عملية الرندر مع الحفاظ على نعومة التأثير
+                      vid.write_videofile(final_video_name, fps=15, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
+                      aud.close()
                   except Exception as e:
                       pbar.write(f"Video Error: {e}")
                       return None
                   pbar.update(1)
 
-                  pbar.set_description("☁️ رفع الفيديو")
+                  pbar.set_description("☁️ رفع الفيديو مؤقتا")
                   link = upload_to_catbox(final_video_name)
                   pbar.update(1)
                   pbar.write(f"\n✅ تم الانتهاء بنجاح! الرابط: {link}")
@@ -236,66 +254,62 @@ jobs:
                   return t
 
           # ==========================================
-          # حلقة التكرار اللانهائية لإنتاج الفيديوهات تباعاً
+          # عملية إنتاج فيديو واحد فقط في هذه الجلسة
           # ==========================================
-          SCRIPT_START_TIME = time.time()
-          MAX_RUNTIME_SECONDS = 4 * 60 * 60
+          print("\n" + "="*60)
+          print("🔄 بدء جلسة إنتاج فيديو واحد (Perpetual Dual)...")
+          print("="*60)
 
-          while True:
-              if time.time() - SCRIPT_START_TIME > MAX_RUNTIME_SECONDS:
-                  print("\n" + "="*60)
-                  print("⏳ اكتملت 4 ساعات من العمل المستمر. سيتم إنهاء الجلسة الحالية وبدء جلسة جديدة...")
-                  print("="*60)
-                  break
+          try:
+              loop = asyncio.get_event_loop()
+              video_title = loop.run_until_complete(start_video_creation())
 
-              print("\n" + "="*60)
-              print("🔄 بدء دورة جديدة لإنتاج فيديو...")
-              print("="*60)
+              if video_title and os.path.exists("out.mp4"):
+                  
+                  # === فترة انتظار عشوائية من 1 إلى 5 دقائق ===
+                  wait_time = random.randint(60, 300)
+                  print(f"\n⏳ انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية قبل الرفع إلى اليوتيوب لتجنب الحظر...")
+                  time.sleep(wait_time)
+                  # ============================================
 
-              try:
-                  loop = asyncio.get_event_loop()
-                  video_title = loop.run_until_complete(start_video_creation())
+                  print("\n📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
+                  try:
+                      if 'YOUTUBE_CREDENTIALS' in os.environ:
+                          creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
+                          creds = Credentials.from_authorized_user_info(creds_data)
+                          youtube = build('youtube', 'v3', credentials=creds)
+                          video_number = len(open(HISTORY_FILE).readlines()) if os.path.exists(HISTORY_FILE) else 1
 
-                  if video_title and os.path.exists("out.mp4"):
-                      print("\n[6/6] 📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
-                      try:
-                          if 'YOUTUBE_CREDENTIALS' in os.environ:
-                              creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
-                              creds = Credentials.from_authorized_user_info(creds_data)
-                              youtube = build('youtube', 'v3', credentials=creds)
-                              video_number = len(open(HISTORY_FILE).readlines()) if os.path.exists(HISTORY_FILE) else 1
+                          raw_yt_title = f"{video_title} السلسلة الكاملة والمدبلجة بالعربي "
+                          if not raw_yt_title.strip(): raw_yt_title = f"#{video_number}"
+                          if len(raw_yt_title) > 95: raw_yt_title = raw_yt_title[:95] + "..."
 
-                              raw_yt_title = f"{video_title} السلسلة الكاملة والمدبلجة بالعربي "
-                              if not raw_yt_title.strip(): raw_yt_title = f"#{video_number}"
-                              if len(raw_yt_title) > 95: raw_yt_title = raw_yt_title[:95] + "..."
+                          body = {
+                              'snippet': {'title': raw_yt_title, 'description': f'ملخص ومراجعة مسلسل {video_title}', 'categoryId': '24'},
+                              'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                          }
+                          media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
+                          response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
+                          print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
 
-                              body = {
-                                  'snippet': {'title': raw_yt_title, 'description': f'ملخص ومراجعة مسلسل {video_title}', 'categoryId': '24'},
-                                  'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
-                              }
-                              media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
-                              response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
-                              print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
+                          # تسجيل الفيديو في الهيستوري لمنع تكراره مستقبلاً
+                          with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                              f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                  except Exception as e:
+                      print(f"❌ فشل يوتيوب: {e}")
 
-                              with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                                  f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
-                      except Exception as e:
-                          print(f"❌ فشل يوتيوب: {e}")
+          except Exception as e:
+              print(f"❌ حدث خطأ غير متوقع: {e}")
 
-              except Exception as e:
-                  print(f"❌ حدث خطأ غير متوقع: {e}")
+          # تنظيف الملفات المؤقتة
+          for f in os.listdir():
+              if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
+                  try: os.remove(f)
+                  except: pass
 
-              for f in os.listdir():
-                  if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
-                      try: os.remove(f)
-                      except: pass
-
-              print("\n" + "="*50)
-              print("✅ تم الانتهاء من الدورة الحالية!")
-              print("⏳ جاري الانتظار 60 ثانية قبل البدء في إنتاج الفيديو التالي...")
-              print("="*50)
-
-              time.sleep(60)
+          print("\n" + "="*50)
+          print("✅ تم الانتهاء من العمل في هذه الجلسة وسيتم الإغلاق للبدء بدورة جديدة.")
+          print("="*50)
           EOF
           python script.py
 
@@ -313,3 +327,4 @@ jobs:
         run: |
           echo "جاري إعادة تشغيل الأكشن لضمان العمل المستمر (Perpetual Dual)..."
           gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
+          
