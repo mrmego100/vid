@@ -136,11 +136,12 @@ jobs:
                   for attempt in range(5):
                       try:
                           if iteration == 1:
-                              prompt = (f"اكتب بداية ملحمية ومفصلة جداً لقصة درامية بعنوان {t} بناءً على الوصف: {current_context}. "
-                                        f"يجب أن تكون باللغة العربية الفصحى، بأسلوب روائي أدبي ثقيل. "
-                                        f"اكتب فقرة طويلة جداً لا تقل عن 400 كلمة. "
-                                        f"ركز على أدق التفاصيل في المشهد الأول، الألوان، الروائح، والمشاعر. "
-                                        f"اجعل النص مسترسلاً بدون أرقام أو رموز.")
+                              prompt = (f"ابدأ القصة بـ Hook تشويقي باللهجة العامية المصرية بأسلوب: 'في مسلسلنا اليوم.. {t}.. [موقف صادم أو تضحية].. وفي الآخر بيحصل [خيانة أو صدمة]!' "
+                                        f"خليه أسلوب حكواتي بيشد اللي قدامه. "
+                                        f"بعد الـ Hook، ادخل فوراً في السرد الملحمي والمفصل جداً باللغة العربية الفصحى. "
+                                        f"بناءً على الوصف: {current_context}. "
+                                        f"يجب أن تكون الفقرة طويلة جداً لا تقل عن 400 كلمة، ركز على أدق التفاصيل في المشهد، "
+                                        f"الألوان، الروائح، والمشاعر. اجعل النص مسترسلاً بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
                                         f"آخر ما حدث هو: {full_story[-800:]}. "
@@ -256,83 +257,85 @@ jobs:
                   return {"title": t, "story": ai_story}
 
           # ==========================================
-          # عملية إنتاج الفيديو في حلقة تدوم 4 ساعات
+          # عملية إنتاج فيديو واحد فقط، ثم النوم لمدة 4 ساعات
           # ==========================================
           print("\n" + "="*60)
-          print("🔄 بدء جلسة الإنتاج المستمر (4 ساعات)...")
+          print("🔄 بدء الجلسة: سيتم إنتاج فيديو واحد فقط ثم الانتظار لمدة 4 ساعات...")
           print("="*60)
 
           start_time = time.time()
           loop = asyncio.get_event_loop()
 
-          while (time.time() - start_time) < SESSION_DURATION:
-              try:
-                  result_data = loop.run_until_complete(start_video_creation())
+          try:
+              result_data = loop.run_until_complete(start_video_creation())
 
-                  if result_data and os.path.exists("out.mp4"):
-                      video_title = result_data["title"]
-                      ai_story = result_data["story"]
-                      
-                      # === فترة انتظار عشوائية من 1 إلى 5 دقائق قبل الرفع ===
-                      wait_time = random.randint(60, 300)
-                      print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية قبل الرفع إلى اليوتيوب لتجنب الحظر...")
-                      time.sleep(wait_time)
-                      # ============================================
+              if result_data and os.path.exists("out.mp4"):
+                  video_title = result_data["title"]
+                  ai_story = result_data["story"]
+                  
+                  # === فترة انتظار عشوائية من 1 إلى 5 دقائق قبل الرفع ===
+                  wait_time = random.randint(60, 300)
+                  print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية قبل الرفع إلى اليوتيوب لتجنب الحظر...")
+                  time.sleep(wait_time)
+                  # ============================================
 
-                      print("\n📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
-                      try:
-                          if 'YOUTUBE_CREDENTIALS' in os.environ:
-                              creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
-                              creds = Credentials.from_authorized_user_info(creds_data)
-                              youtube = build('youtube', 'v3', credentials=creds)
-                              
-                              # استخراج أول كلمات من القصة كـ Hook جذاب للعنوان
-                              hook_words = " ".join(ai_story.split()[:7])
-                              raw_yt_title = f"{hook_words}... | قصة {video_title}"
-                              
-                              # التأكد من أن طول العنوان لا يتجاوز حد اليوتيوب المسموح به
-                              if len(raw_yt_title) > 95: 
-                                  raw_yt_title = raw_yt_title[:95] + "..."
+                  print("\n📤 جاري الرفع إلى يوتيوب (يرجى الانتظار حتى تكتمل العملية)...")
+                  try:
+                      if 'YOUTUBE_CREDENTIALS' in os.environ:
+                          creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
+                          creds = Credentials.from_authorized_user_info(creds_data)
+                          youtube = build('youtube', 'v3', credentials=creds)
+                          
+                          # استخراج أول كلمات من القصة كـ Hook جذاب للعنوان
+                          hook_words = " ".join(ai_story.split()[:7])
+                          raw_yt_title = f"{hook_words} | ملخص {video_title}"
+                          
+                          # التأكد من أن طول العنوان لا يتجاوز حد اليوتيوب المسموح به
+                          if len(raw_yt_title) > 95: 
+                              raw_yt_title = raw_yt_title[:95] + "..."
 
-                              # تجهيز الوصف بالصيغة المطلوبة + جزء من القصة
-                              full_description = f"{raw_yt_title}\n\nمسلسل {video_title} مدبلج بالعربي ملخص كامل\n\n{ai_story[:500]}..."
+                          # تجهيز الوصف بالصيغة المطلوبة + جزء من القصة
+                          full_description = f"مسلسل {video_title} مدبلج بالعربي ملخص كامل تلخيص جميع الاجزاء المترجمة \n\n{ai_story[:500]}..."
 
-                              body = {
-                                  'snippet': {
-                                      'title': raw_yt_title, 
-                                      'description': full_description, 
-                                      'categoryId': '24'
-                                  },
-                                  'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
-                              }
-                              
-                              media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
-                              response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
-                              print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
+                          body = {
+                              'snippet': {
+                                  'title': raw_yt_title, 
+                                  'description': full_description, 
+                                  'categoryId': '24'
+                              },
+                              'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                          }
+                          
+                          media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
+                          response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
+                          print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
 
-                              # تسجيل الفيديو في الهيستوري لمنع تكراره طوال الحياة
-                              with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                                  f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
-                      except Exception as e:
-                          print(f"❌ فشل يوتيوب: {e}")
-                  else:
-                      print("⚠️ لم يتم إنتاج فيديو في هذه الدورة. قد يكون بسبب تكرار المحتوى. انتظار 30 ثانية قبل المحاولة...")
-                      time.sleep(30)
+                          # تسجيل الفيديو في الهيستوري لمنع تكراره طوال الحياة
+                          with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                              f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                  except Exception as e:
+                      print(f"❌ فشل يوتيوب: {e}")
+              else:
+                  print("⚠️ لم يتم إنتاج فيديو في هذه الدورة. قد يكون بسبب تكرار المحتوى.")
 
-              except Exception as e:
-                  print(f"❌ حدث خطأ غير متوقع في الدورة: {e}")
-                  time.sleep(30)
+          except Exception as e:
+              print(f"❌ حدث خطأ غير متوقع في الدورة: {e}")
 
-              # تنظيف الملفات المؤقتة بعد كل عملية لضمان مساحة عمل نظيفة للعملية التالية
-              for f in os.listdir():
-                  if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
-                      try: os.remove(f)
-                      except: pass
-              
-              # طباعة الوقت المتبقي للجلسة
-              elapsed_time = time.time() - start_time
-              remaining_time = SESSION_DURATION - elapsed_time
-              print(f"\n⏱️ الوقت المتبقي لانتهاء الجلسة: {int(remaining_time // 3600)} ساعة و {int((remaining_time % 3600) // 60)} دقيقة.\n")
+          # تنظيف الملفات المؤقتة بعد رفع الفيديو
+          for f in os.listdir():
+              if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
+                  try: os.remove(f)
+                  except: pass
+          
+          # ========================================================
+          # انتظار باقي الـ 4 ساعات بدون فعل أي شيء قبل إغلاق الجلسة
+          # ========================================================
+          elapsed_time = time.time() - start_time
+          remaining_time = SESSION_DURATION - elapsed_time
+          
+          if remaining_time > 0:
+              print(f"\n⏱️ تم إنجاز المهمة. سيتم الآن وضع السكربت في حالة انتظار (Sleep) لمدة {int(remaining_time // 3600)} ساعة و {int((remaining_time % 3600) // 60)} دقيقة حتى تكتمل الـ 4 ساعات المحددة للجلسة...\n")
+              time.sleep(remaining_time)
 
           print("\n" + "="*50)
           print("✅ انتهت مدة الجلسة (4 ساعات). سيتم الإغلاق للبدء بدورة (Job) جديدة لضمان الاستمرارية.")
