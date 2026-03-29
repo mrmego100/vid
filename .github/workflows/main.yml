@@ -54,8 +54,8 @@ jobs:
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
           # -----------------------------------------------
 
-          from moviepy.editor import ImageClip, AudioFileClip, ImageSequenceClip
-          from datetime import datetime, timedelta
+          from moviepy.editor import ImageClip, AudioFileClip
+          from datetime import datetime
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
@@ -72,15 +72,15 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # ==========================================
-          # دوال إنشاء الفيديو الجديدة
+          # دوال جلب وإنشاء المحتوى
           # ==========================================
           def get_data():
               history_titles = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                          for line in f:
-                              if "|" in line:
-                                  history_titles.append(line.split("|")[0].strip())
+                      for line in f:
+                          if "|" in line:
+                              history_titles.append(line.split("|")[0].strip())
 
               base = "https://www.shorttv.live"
               try:
@@ -128,7 +128,7 @@ jobs:
               print(f"🔄 البدء في توليد الملحمة (Target: 2500 - 3000 words)...")
               
               iteration = 1
-              max_iterations = 50 # حاجز أمان لمنع التكرار اللانهائي
+              max_iterations = 50 
               
               while len(full_story.split()) < 2500 and iteration <= max_iterations:
                   success = False
@@ -173,27 +173,16 @@ jobs:
                   iteration += 1
                   time.sleep(2) 
                   
-                  # التأكد من عدم تجاوز الـ 3000 كلمة بكثير
                   words = full_story.split()
                   if len(words) >= 3000:
                       full_story = " ".join(words[:3000])
                       print(f"✂️ تم الوصول للحد الأقصى وتم ضبط القصة لتكون بحدود 3000 كلمة.")
                       break
               
-              return full_story.strip() if full_story else f"ملخص من وحي الخيال من قصة مسلسل  {t}."
-
-          def upload_to_catbox(path):
-              try:
-                  url = "https://catbox.moe/user/api.php"
-                  data = {"reqtype": "fileupload"}
-                  with open(path, "rb") as f:
-                      files = {"fileToUpload": f}
-                      response = requests.post(url, data=data, files=files)
-                  return response.text.strip()
-              except: return "Error during upload"
+              return full_story.strip() if full_story else f""
 
           async def start_video_creation():
-              with tqdm(total=5, desc="🚀 العمل جاري", unit="step", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]') as pbar:
+              with tqdm(total=4, desc="🚀 العمل جاري", unit="step", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]') as pbar:
                   pbar.set_description("🔍 جلب البيانات")
                   data = get_data()
                   if not data: 
@@ -206,7 +195,7 @@ jobs:
 
                   pbar.set_description("🤖 تأليف الملحمة الطويلة")
                   ai_story = create_story(t, data['desc'])
-                  fixed_intro = f"أهلاً بكم. اليوم سنروي لكم حكاية ملخصة من مسلسلنا الشهير {t}. فهيا بنا يا رفاق. "
+                  fixed_intro = f""
                   final_story_text = fixed_intro + ai_story
                   word_count = len(final_story_text.split())
                   pbar.write(f"📖 الطول النهائي للقصة: {word_count} كلمة.")
@@ -216,45 +205,57 @@ jobs:
                   await make_audio(final_story_text)
                   pbar.update(1)
 
-                  pbar.set_description("🎬 مونتاج الفيديو مع تأثير الثلج/الحبيبات")
+                  pbar.set_description("🎬 مونتاج الفيديو مع تأثير الثلج المتحرك")
                   final_video_name = "out.mp4"
                   try:
                       aud = AudioFileClip("v.mp3")
                       base_vid = ImageClip("p.jpg").resize(height=720)
                       
-                      # إنشاء تأثير الحبيبات والثلج السينمائي الأنيق (Film Grain Effect)
+                      # =========================================
+                      # إنشاء تأثير الثلج المتحرك (Falling Snow)
+                      # =========================================
                       w, h = base_vid.w, base_vid.h
-                      noise_frames = []
-                      for _ in range(10):  # توليد 10 إطارات عشوائية
-                          noise = np.random.randint(0, 45, (h, w, 3), dtype=np.uint8)
-                          noise_frames.append(noise)
+                      num_flakes = 350
                       
-                      def add_grain_effect(get_frame, time_pos):
-                          frame = get_frame(time_pos)
-                          idx = int(time_pos * 15) % 10  # التبديل بين الإطارات لإعطاء تأثير متحرك
-                          noise = noise_frames[idx]
-                          # دمج خفيف للصورة مع الحبيبات لتبدو أنيقة وغير مزعجة
-                          return np.clip(frame + noise * 0.35, 0, 255).astype(np.uint8)
+                      # توليد إحداثيات عشوائية لكرات الثلج
+                      flakes_x = np.random.randint(0, w, num_flakes)
+                      flakes_y = np.random.randint(0, h, num_flakes)
+                      # سرعات متفاوتة للتساقط ليعطي واقعية
+                      flakes_speed = np.random.randint(30, 100, num_flakes) 
+                      # أحجام مختلفة للثلج
+                      flakes_size = np.random.randint(1, 4, num_flakes)
 
-                      vid = base_vid.set_duration(aud.duration).fl(add_grain_effect).set_audio(aud)
+                      def add_snow_effect(get_frame, t_time):
+                          frame = np.copy(get_frame(t_time))
+                          for i in range(num_flakes):
+                              # حساب حركة الثلج بناء على الزمن
+                              y = int((flakes_y[i] + t_time * flakes_speed[i]) % h)
+                              x = flakes_x[i]
+                              s = flakes_size[i]
+                              
+                              # حدود الرسم لمنع تجاوز أبعاد الصورة
+                              y_end = min(y + s, h)
+                              x_end = min(x + s, w)
+                              
+                              # تلوين البيكسلات باللون الأبيض المائل للزرقة الفاتحة
+                              frame[y:y_end, x:x_end] = [240, 248, 255]
+                          return frame
+
+                      vid = base_vid.set_duration(aud.duration).fl(add_snow_effect).set_audio(aud)
                       
-                      # استخدام fps=15 لتسريع عملية الرندر مع الحفاظ على نعومة التأثير
+                      # fps=15 كافية جداً لحركة الثلج وتسرع الرندر
                       vid.write_videofile(final_video_name, fps=15, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
                       aud.close()
                   except Exception as e:
                       pbar.write(f"Video Error: {e}")
                       return None
                   pbar.update(1)
-
-                  pbar.set_description("☁️ رفع الفيديو مؤقتا")
-                  link = upload_to_catbox(final_video_name)
-                  pbar.update(1)
-                  pbar.write(f"\n✅ تم الانتهاء بنجاح! الرابط: {link}")
                   
-                  return t
+                  # إرجاع العنوان والقصة المولدة لاستخدامها في عنوان اليوتيوب
+                  return {"title": t, "story": ai_story}
 
           # ==========================================
-          # عملية إنتاج فيديو واحد فقط في هذه الجلسة
+          # عملية إنتاج فيديو واحد فقط ثم الرفع
           # ==========================================
           print("\n" + "="*60)
           print("🔄 بدء جلسة إنتاج فيديو واحد (Perpetual Dual)...")
@@ -262,13 +263,15 @@ jobs:
 
           try:
               loop = asyncio.get_event_loop()
-              video_title = loop.run_until_complete(start_video_creation())
+              result_data = loop.run_until_complete(start_video_creation())
 
-              if video_title and os.path.exists("out.mp4"):
+              if result_data and os.path.exists("out.mp4"):
+                  video_title = result_data["title"]
+                  ai_story = result_data["story"]
                   
-                  # === فترة انتظار عشوائية من 1 إلى 5 دقائق ===
+                  # === فترة انتظار عشوائية من 1 إلى 5 دقائق قبل الرفع ===
                   wait_time = random.randint(60, 300)
-                  print(f"\n⏳ انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية قبل الرفع إلى اليوتيوب لتجنب الحظر...")
+                  print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية قبل الرفع إلى اليوتيوب لتجنب الحظر...")
                   time.sleep(wait_time)
                   # ============================================
 
@@ -278,21 +281,32 @@ jobs:
                           creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
                           creds = Credentials.from_authorized_user_info(creds_data)
                           youtube = build('youtube', 'v3', credentials=creds)
-                          video_number = len(open(HISTORY_FILE).readlines()) if os.path.exists(HISTORY_FILE) else 1
+                          
+                          # استخراج أول كلمات من القصة كـ Hook جذاب للعنوان
+                          hook_words = " ".join(ai_story.split()[:7])
+                          raw_yt_title = f"{hook_words}... | قصة {video_title}"
+                          
+                          # التأكد من أن طول العنوان لا يتجاوز حد اليوتيوب المسموح به
+                          if len(raw_yt_title) > 95: 
+                              raw_yt_title = raw_yt_title[:95] + "..."
 
-                          raw_yt_title = f"{video_title} السلسلة الكاملة والمدبلجة بالعربي "
-                          if not raw_yt_title.strip(): raw_yt_title = f"#{video_number}"
-                          if len(raw_yt_title) > 95: raw_yt_title = raw_yt_title[:95] + "..."
+                          # تجهيز الوصف بالصيغة المطلوبة + جزء من القصة
+                          full_description = f"{raw_yt_title}\n\nمسلسل {video_title} مدبلج بالعربي ملخص كامل\n\n{ai_story[:500]}..."
 
                           body = {
-                              'snippet': {'title': raw_yt_title, 'description': f'ملخص ومراجعة مسلسل {video_title}', 'categoryId': '24'},
+                              'snippet': {
+                                  'title': raw_yt_title, 
+                                  'description': full_description, 
+                                  'categoryId': '24'
+                              },
                               'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
                           }
+                          
                           media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
                           response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
                           print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}")
 
-                          # تسجيل الفيديو في الهيستوري لمنع تكراره مستقبلاً
+                          # تسجيل الفيديو في الهيستوري لمنع تكراره طوال الحياة
                           with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                               f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
                   except Exception as e:
