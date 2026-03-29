@@ -200,7 +200,7 @@ jobs:
                   fixed_intro = f""
                   final_story_text = fixed_intro + ai_story
                   word_count = len(final_story_text.split())
-                  pbar.write(f"📖 الطول النهائي للقصة: {word_count} كلمة.")
+                  pbar.write(f"📖 الط الطول النهائي للقصة: {word_count} كلمة.")
                   pbar.update(1)
 
                   pbar.set_description("🎙️ توليد الصوت")
@@ -286,9 +286,21 @@ jobs:
                           creds = Credentials.from_authorized_user_info(creds_data)
                           youtube = build('youtube', 'v3', credentials=creds)
                           
-                          # استخراج أول كلمات من القصة كـ Hook جذاب للعنوان
-                          hook_words = " ".join(ai_story.split()[:7])
-                          raw_yt_title = f"{hook_words} | ملخص {video_title}"
+                          # ========================================================
+                          # توليد عنوان مشوق من القصة باستخدام الذكاء الاصطناعي
+                          # ========================================================
+                          try:
+                              prompt_t = f"استخرج حدثاً صادماً ومشوقاً من هذه القصة في جملة قصيرة جداً (لا تتعدى 8 كلمات) لتكون عنواناً جذاباً للفيديو. اكتب الجملة فقط بدون علامات تنصيص أو إضافات: {ai_story[:1000]}"
+                              catchy_event = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt_t}])
+                              if catchy_event and len(catchy_event) > 5:
+                                  catchy_event = catchy_event.replace('"', '').replace("'", "").strip()
+                              else:
+                                  catchy_event = "أحداث صادمة ومفاجآت غير متوقعة"
+                          except:
+                              catchy_event = "أحداث صادمة ومفاجآت غير متوقعة"
+
+                          # دمج الحدث مع كلمة ملخص واسم المسلسل
+                          raw_yt_title = f"{catchy_event} | ملخص {video_title}"
                           
                           # التأكد من أن طول العنوان لا يتجاوز حد اليوتيوب المسموح به
                           if len(raw_yt_title) > 95: 
