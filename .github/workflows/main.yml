@@ -36,9 +36,12 @@ jobs:
         run: |
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
-          # تحميل موديل الصوت العربي الواقعي (VITS)
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-arabic-pavoque-low.tar.bz2
-          tar xf vits-arabic-pavoque-low.tar.bz2
+          echo "📥 جاري تحميل موديل الصوت العربي الواقعي (Sherpa-ONNX/VITS)..."
+          if [ ! -d "vits-arabic-pavoque-low" ]; then
+            wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-arabic-pavoque-low.tar.bz2
+            tar xf vits-arabic-pavoque-low.tar.bz2
+            rm vits-arabic-pavoque-low.tar.bz2
+          fi
           
           cat << 'EOF' > script.py
           # ==========================================
@@ -123,7 +126,6 @@ jobs:
 
           async def make_audio(text):
               clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
-              
               try:
                   print("🎙️ جاري توليد الصوت باستخدام Sherpa-ONNX (VITS)...")
                   import scipy.io.wavfile as wav
@@ -153,12 +155,12 @@ jobs:
           def create_story(t, d):
               full_story = ""
               current_context = d
-              print(f"🔄 البدء في توليد الملحمة (Target: 100 - 3000 words)...")
+              print(f"🔄 البدء في توليد الملحمة (Target: 2500 - 3000 words)...")
               
               iteration = 1
               max_iterations = 50 
               
-              while len(full_story.split()) < 100 and iteration <= max_iterations:
+              while len(full_story.split()) < 2500 and iteration <= max_iterations:
                   success = False
                   for attempt in range(5):
                       try:
@@ -167,12 +169,12 @@ jobs:
                                         f"خليه أسلوب حكواتي بيشد اللي قدامه. "
                                         f"بعد الـ Hook، ادخل فوراً في السرد الملحمي والمفصل جداً باللغة العربية الفصحى. "
                                         f"بناءً على الوصف: {current_context}. "
-                                        f"يجب أن تكون الفقرة طويلة جداً لا تقل عن 10 كلمة، ركز على أدق التفاصيل في المشهد، "
+                                        f"يجب أن تكون الفقرة طويلة جداً لا تقل عن 400 كلمة، ركز على أدق التفاصيل في المشهد، "
                                         f"الألوان، الروائح، والمشاعر. اجعل النص مسترسلاً بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
-                                        f"آخر ما حدث هو: {full_story[-80:]}. "
-                                        f"اكتب فقرة طويلة جداً لا تقل عن 10 كلمة. "
+                                        f"آخر ما حدث هو: {full_story[-800:]}. "
+                                        f"اكتب فقرة طويلة جداً لا تقل عن 400 كلمة. "
                                         f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
                                         f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط بدون أرقام أو رموز.")
 
@@ -227,7 +229,7 @@ jobs:
                   fixed_intro = f""
                   final_story_text = fixed_intro + ai_story
                   word_count = len(final_story_text.split())
-                  pbar.write(f"📖 الط الطول النهائي للقصة: {word_count} كلمة.")
+                  pbar.write(f"📖 الطول النهائي للقصة: {word_count} كلمة.")
                   pbar.update(1)
 
                   pbar.set_description("🎙️ توليد الصوت")
@@ -300,7 +302,8 @@ jobs:
                   ai_story = result_data["story"]
                   
                   # === فترة انتظار عشوائية للتمويه من 1 إلى 5 دقائق قبل الرفع ===
-                  wait_time = random.randint(3, 6)
+                  # تم تصحيح الخطأ البرمجي هنا لتجنب توقف بايثون
+                  wait_time = random.randint(60, 300)
                   print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية للتمويه قبل الرفع إلى اليوتيوب...")
                   time.sleep(wait_time)
                   # ============================================
