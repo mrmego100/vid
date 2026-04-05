@@ -41,28 +41,16 @@ jobs:
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
-          echo "📥 جاري تحميل 5 موديلات صوتية (Sherpa-ONNX)..."
-          # 1. صوت فارس (أردني)
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-faris-low.tar.bz2
-          tar xf vits-piper-ar_JO-faris-low.tar.bz2
-          
-          # 2. صوت كريم (أردني)
+          echo "📥 جاري تحميل المحرك الأساسي (كريم)..."
           wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
           tar xf vits-piper-ar_JO-kareem-low.tar.bz2
+          rm vits-piper-ar_JO-kareem-low.tar.bz2
+          mv vits-piper-ar_JO-kareem-low piper_models
           
-          # 3. صوت حسين (إماراتي)
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_AE-hussein-low.tar.bz2
-          tar xf vits-piper-ar_AE-hussein-low.tar.bz2
-          
-          # 4. صوت فاطمة (إماراتي نسائي)
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_AE-fatima-low.tar.bz2
-          tar xf vits-piper-ar_AE-fatima-low.tar.bz2
-          
-          # 5. صوت أميري (قطري)
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_QA-amiri-low.tar.bz2
-          tar xf vits-piper-ar_QA-amiri-low.tar.bz2
-          
-          rm *.tar.bz2
+          echo "📥 جاري سحب الأصوات الإضافية النادرة..."
+          wget -q https://huggingface.co/rhasspy/piper-voices/resolve/main/ar/ar_JO/faris/low/ar_JO-faris-low.onnx -O piper_models/ar_JO-faris-low.onnx || true
+          wget -q https://huggingface.co/rhasspy/piper-voices/resolve/main/ar/ar_AE/hussein/low/ar_AE-hussein-low.onnx -O piper_models/ar_AE-hussein-low.onnx || true
+          wget -q https://huggingface.co/rhasspy/piper-voices/resolve/main/ar/ar_AE/fatima/low/ar_AE-fatima-low.onnx -O piper_models/ar_AE-fatima-low.onnx || true
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
@@ -96,18 +84,19 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # =========================================================================================
-          # 🎛️ إعدادات المعلق الصوتي
-          # قم بتغيير الرقم من 1 إلى 5 لاختيار الصوت المناسب
-          # 1: فارس (أردني عميق) | 2: كريم (أردني هادئ) | 3: حسين (إماراتي) | 4: فاطمة (نسائي) | 5: أميري (قطري)
+          # 🎛️ إعدادات المعلق الصوتي (تغيير الرقم يغير المعلق تلقائياً)
+          # 1: فارس (أردني عميق - الأفضل للدراما) 
+          # 2: كريم (أردني هادئ ومستقر)
+          # 3: حسين (إماراتي)
+          # 4: فاطمة (إماراتي نسائي)
           # =========================================================================================
           VOICE_ID = 1
 
           VOICES_MAP = {
-              1: ("vits-piper-ar_JO-faris-low", "ar_JO-faris-low"),
-              2: ("vits-piper-ar_JO-kareem-low", "ar_JO-kareem-low"),
-              3: ("vits-piper-ar_AE-hussein-low", "ar_AE-hussein-low"),
-              4: ("vits-piper-ar_AE-fatima-low", "ar_AE-fatima-low"),
-              5: ("vits-piper-ar_QA-amiri-low", "ar_QA-amiri-low")
+              1: "ar_JO-faris-low.onnx",
+              2: "ar_JO-kareem-low.onnx",
+              3: "ar_AE-hussein-low.onnx",
+              4: "ar_AE-fatima-low.onnx"
           }
           # =========================================================================================
 
@@ -161,22 +150,22 @@ jobs:
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', ' ', clean_text)
               clean_text = re.sub(r'\.+', '.', clean_text)
               
-              folder_name, model_name = VOICES_MAP.get(VOICE_ID, VOICES_MAP[1])
-              model_path = f"{folder_name}/{model_name}.onnx"
-              tokens_path = f"{folder_name}/tokens.txt"
-              data_dir = f"{folder_name}/espeak-ng-data"
+              model_name = VOICES_MAP.get(VOICE_ID, "ar_JO-kareem-low.onnx")
+              model_path = f"piper_models/{model_name}"
               
-              print(f"🎙️ جاري توليد الصوت باستخدام الموديل: {model_name}...", flush=True)
               if not os.path.exists(model_path):
-                  raise Exception(f"ملف الموديل غير موجود: {model_path}")
+                  print(f"⚠️ الصوت المطلوب غير جاهز، سيتم استخدام (كريم) كبديل.")
+                  model_path = "piper_models/ar_JO-kareem-low.onnx"
 
+              print(f"🎙️ جاري توليد الصوت باستخدام الموديل...", flush=True)
+              
               try:
                   tts_config = sherpa_onnx.OfflineTtsConfig(
                       model=sherpa_onnx.OfflineTtsModelConfig(
                           vits=sherpa_onnx.OfflineTtsVitsModelConfig(
                               model=model_path,
-                              tokens=tokens_path,
-                              data_dir=data_dir,
+                              tokens="piper_models/tokens.txt",
+                              data_dir="piper_models/espeak-ng-data",
                           ),
                           num_threads=1
                       )
@@ -199,7 +188,6 @@ jobs:
                   final_samples = np.array(all_samples, dtype=np.float32)
                   wav.write("v.wav", sample_rate, final_samples)
                   
-                  print("⚡ جاري تسريع الإيقاع الصوتي بشكل آمن...", flush=True)
                   os.system('ffmpeg -i v.wav -filter:a "atempo=1.15" -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet')
                   print("✅ تم توليد الصوت بنجاح.", flush=True)
               except Exception as e:
@@ -219,7 +207,7 @@ jobs:
                       try:
                           if iteration == 1:
                               prompt = (f"أنت معلق درامي محترف. اكتب بداية ملخص لمسلسل '{t}' بناءً على: {current_context}. "
-                                        f"**تحذير صارم جداً:** اكتب النص مباشرة دون أي مقدمات، لا تقل 'بالطبع' أو 'إليك الملخص' أو أي كلمة من هذا القبيل. "
+                                        f"**تحذير صارم جداً:** اكتب النص مباشرة دون أي مقدمات، لا تقل 'بالطبع' أو 'إليك الملخص'. "
                                         f"**قاعدة السرد:** استخدم هذا الأسلوب المرجعي تماماً في البناء: "
                                         f"«تبدأ الحكاية عند المدعو هنري فورد الثاني، وريث إمبراطورية فورد، الذي استيقظ يوماً ليجد المبيعات في حالة ركود، فقرر القيام بحركة استعراضية ليغيظ بها الإيطاليين... ومن هنا بدأت المعمعة.» "
                                         f"اكتب فقرة واحدة مسترسلة (150 كلمة)، بلغة عربية فصحى دقيقة إملائياً، بدون أرقام أو رموز.")
@@ -241,7 +229,6 @@ jobs:
                               
                               full_story += " " + chunk
                               success = True
-                              print(f"✅ تم توليد الجزء {iteration} بنجاح.", flush=True)
                               break
                           else:
                               time.sleep(2)
@@ -356,7 +343,7 @@ jobs:
                           youtube = build('youtube', 'v3', credentials=creds)
                           
                           try:
-                              prompt_t = f"استخرج حدثاً صادماً ومشوقاً من القصة في جملة قصيرة (لا تتعدى 8 كلمات). الجملة فقط بدون مقدمات: {ai_story[:1000]}"
+                              prompt_t = f"استخرج حدثاً صادماً ومشوقاً من القصة في جملة قصيرة (لا تتعدى 8 كلمات). الجملة فقط: {ai_story[:1000]}"
                               catchy_event = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt_t}])
                               if catchy_event and len(catchy_event) > 5:
                                   catchy_event = catchy_event.replace('"', '').replace("'", "").strip()
