@@ -39,6 +39,7 @@ jobs:
           
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
+          echo "📥 جاري تحميل موديل الصوت..."
           wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
           tar xf vits-piper-ar_JO-kareem-low.tar.bz2
           rm vits-piper-ar_JO-kareem-low.tar.bz2
@@ -75,15 +76,14 @@ jobs:
           # شرح تغيير الصوت ببساطة:
           # 1. الموديل الحالي هو "kareem" وهو صوت جيد ومستقر.
           # 2. لتغييره، ابحث في صفحة (sherpa-onnx tts models) على GitHub عن موديلات VITS عربية أخرى.
-          #    (مثل: vits-arabic-pavoque-low أو أي موديل من piper مثل ar_AE-hussein-low)
           # 3. استبدل رابط التحميل (wget) في الأعلى برابط الموديل الجديد.
           # 4. استبدل اسم المجلد "vits-piper-ar_JO-kareem-low" واسم الملف ".onnx" في الكود بالأسفل 
           #    باسم مجلد وملف الموديل الجديد.
           # 5. لتغيير سرعة نطق الصوت (لجعله بشري وحماسي)، قم بتغيير الرقم 1.25 في سطر ffmpeg بالأسفل.
-          #    (مثلاً: 1.10 أبطأ قليلاً، 1.30 أسرع).
           # =========================================================================================
 
           def get_data():
+              print("🔍 جاري جلب البيانات...", flush=True)
               history_titles = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -119,16 +119,18 @@ jobs:
                       
                       img_data = requests.get(i_url).content
                       with open("p.jpg", "wb") as f: f.write(img_data)
+                      print(f"🎬 العنوان المستهدف: {title}", flush=True)
                       return {"title": title, "desc": desc}
               except Exception as e:
+                  print("❌ خطأ في جلب البيانات.", flush=True)
                   return None
-              
               return None
 
           async def make_audio(text):
               clean_text = re.sub(r'[\u064B-\u065F]', '', text)
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', '.', clean_text)
               
+              print("🎙️ جاري توليد الصوت باستخدام Sherpa-ONNX...", flush=True)
               if not os.path.exists("vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx"):
                   raise Exception("ملفات الموديل غير موجودة.")
 
@@ -161,16 +163,17 @@ jobs:
                   final_samples = np.array(all_samples, dtype=np.float32)
                   wav.write("v.wav", sample_rate, final_samples)
                   
-                  # تسريع الصوت بنسبة 25% (1.25) لجعله بشري وسريع بدون ملل
+                  print("⚡ جاري تسريع الإيقاع الصوتي ومعالجته...", flush=True)
                   os.system('ffmpeg -i v.wav -filter:a "atempo=1.25" -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet')
-              
+                  print("✅ تم توليد الصوت بنجاح.", flush=True)
               except Exception as e:
+                  print(f"❌ خطأ في الصوت: {e}", flush=True)
                   raise e
 
           def create_story(t, d):
               full_story = ""
               current_context = d
-              
+              print("🤖 جاري تأليف الملخص...", flush=True)
               iteration = 1
               max_iterations = 6 
               
@@ -179,16 +182,16 @@ jobs:
                   for attempt in range(3):
                       try:
                           if iteration == 1:
-                              prompt = (f"أنت راوي قصص محترف. اكتب ملخصاً درامياً لمسلسل بعنوان '{t}' باللغة العربية الفصحى السليمة تماماً والخالية من أي أخطاء إملائية أو نحوية. "
-                                        f"يجب أن يكون أسلوبك في السرد مطابقاً تماماً لهذا النمط المرجعي بالحرف: "
-                                        f"«تبدأ الحكاية عند المدعو هنري فورد الثاني، وريث إمبراطورية فورد، الذي استيقظ يوماً ليجد المبيعات في حالة ركود، فقرر القيام بحركة استعراضية ليغيظ بها الإيطاليين... ومن هنا بدأت المعمعة.» "
-                                        f"الوصف الأساسي: {current_context}. "
-                                        f"اكتب فقرة واحدة مسترسلة (حوالي 150 كلمة)، بدون أي أرقام أو رموز أو إضافات خارجة عن النص.")
+                              prompt = (f"اكتب ملخصاً درامياً مباشراً لمسلسل بعنوان '{t}' بناءً على: {current_context}. "
+                                        f"تنبيه صارم: ابدأ فوراً بسرد القصة. ممنوع منعاً باتاً كتابة أي مقدمات أو ردود مثل 'بالطبع' أو 'إليك الملخص'. "
+                                        f"يجب أن يكون أسلوبك مطابقاً تماماً لهذا النمط المرجعي في السرد: "
+                                        f"'تبدأ الحكاية عند المدعو كذا، الذي استيقظ يوماً ليجد كذا... ومن هنا بدأت المعمعة.' "
+                                        f"لغة عربية فصحى سليمة 100% خالية تماماً من الأخطاء الإملائية. اكتب فقرة واحدة مسترسلة بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفاجئ. "
                                         f"آخر ما حدث هو: {full_story[-100:]}. "
-                                        f"اكتب فقرة مسترسلة في حدود 150 كلمة. "
-                                        f"تذكر: لغة عربية فصحى سليمة 100% خالية من الأخطاء الإملائية، حافظ على نفس أسلوب السرد المرجعي القوي، وبدون استخدام أي أرقام أو رموز.")
+                                        f"تنبيه صارم: اكتب تكملة القصة فوراً. ممنوع منعاً باتاً كتابة أي ردود مثل 'بالطبع' أو 'إليك التكملة'. "
+                                        f"اكتب فقرة مسترسلة في حدود 150 كلمة. لغة عربية فصحى سليمة 100% خالية من الأخطاء الإملائية وبدون أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
                               model=g4f.models.gpt_4,
@@ -196,9 +199,13 @@ jobs:
                           )
                           
                           if response and len(response) > 50:
+                              # تنظيف إضافي لإزالة أي ردود ذكاء اصطناعي محتملة في البداية
                               chunk = re.sub(r'[*#\-]', '', response).strip()
+                              chunk = re.sub(r'^(بالطبع|إليك|حسناً|إليك الملخص|بكل سرور|مقدمة|قصة|الملخص)[:،. -]*', '', chunk).strip()
+                              
                               full_story += " " + chunk
                               success = True
+                              print(f"✅ تم توليد الجزء {iteration} بنجاح. (إجمالي الكلمات: {len(full_story.split())})", flush=True)
                               break
                           else:
                               time.sleep(2)
@@ -225,6 +232,7 @@ jobs:
               
               await make_audio(ai_story)
               
+              print("🎬 جاري مونتاج الفيديو...", flush=True)
               final_video_name = "out.mp4"
               try:
                   if not os.path.exists("v.mp3"):
@@ -254,10 +262,16 @@ jobs:
                   vid = base_vid.set_duration(aud.duration).fl(add_snow_effect).set_audio(aud)
                   vid.write_videofile(final_video_name, fps=15, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
                   aud.close()
+                  print("✅ تم المونتاج بنجاح.", flush=True)
               except Exception as e:
+                  print(f"❌ خطأ في المونتاج: {e}", flush=True)
                   return None
               
               return {"title": t, "story": ai_story}
+
+          print("\n============================================================")
+          print("🔄 بدء الجلسة: سيتم إنتاج ورفع فيديو واحد للاختبار...")
+          print("============================================================", flush=True)
 
           loop = asyncio.get_event_loop()
 
@@ -268,8 +282,11 @@ jobs:
                   video_title = result_data["title"]
                   ai_story = result_data["story"]
                   
-                  time.sleep(random.randint(30, 90))
+                  wait_time = random.randint(30, 90)
+                  print(f"⏳ انتظار {wait_time} ثانية قبل الرفع...", flush=True)
+                  time.sleep(wait_time)
 
+                  print("📤 جاري الرفع إلى يوتيوب...", flush=True)
                   try:
                       if 'YOUTUBE_CREDENTIALS' in os.environ:
                           creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
@@ -277,7 +294,7 @@ jobs:
                           youtube = build('youtube', 'v3', credentials=creds)
                           
                           try:
-                              prompt_t = f"استخرج حدثاً صادماً ومشوقاً من القصة في جملة قصيرة (لا تتعدى 8 كلمات). الجملة فقط: {ai_story[:1000]}"
+                              prompt_t = f"استخرج حدثاً صادماً ومشوقاً من القصة في جملة قصيرة (لا تتعدى 8 كلمات). الجملة فقط بدون مقدمات: {ai_story[:1000]}"
                               catchy_event = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt_t}])
                               if catchy_event and len(catchy_event) > 5:
                                   catchy_event = catchy_event.replace('"', '').replace("'", "").strip()
@@ -298,22 +315,26 @@ jobs:
                           
                           media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
                           response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
+                          print(f"✅ تم الرفع ليوتيوب بنجاح: https://www.youtube.com/watch?v={response['id']}", flush=True)
 
                           with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                               f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
                   except Exception as e:
-                      pass
+                      print(f"❌ فشل يوتيوب: {e}", flush=True)
+              else:
+                  print("⚠️ لم يتم إنتاج فيديو.", flush=True)
           except Exception as e:
-              pass
+              print(f"❌ حدث خطأ غير متوقع: {e}", flush=True)
 
           for f in os.listdir():
               if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
                   try: os.remove(f)
                   except: pass
           
+          print("⏱️ سيتم الانتظار 4 ساعات...", flush=True)
           time.sleep(4 * 60 * 60)
           EOF
-          python script.py
+          python -u script.py
 
       - name: 💾 Commit History to Repository
         run: |
