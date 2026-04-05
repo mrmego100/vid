@@ -33,9 +33,12 @@ jobs:
       - name: 🚀 Create and Run Script
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
-          GOOGLE_TTS_CREDENTIALS: ${{ secrets.GOOGLE_TTS_CREDENTIALS }}
         run: |
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy google-cloud-text-to-speech -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
+          
+          # تحميل موديل الصوت العربي الواقعي (VITS)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-arabic-pavoque-low.tar.bz2
+          tar xf vits-arabic-pavoque-low.tar.bz2
           
           cat << 'EOF' > script.py
           # ==========================================
@@ -60,8 +63,6 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
-          from google.cloud import texttospeech
-          from google.oauth2 import service_account
 
           # ==========================================
           # إعدادات بيئة العمل
@@ -124,46 +125,35 @@ jobs:
               clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
               
               try:
-                  if 'GOOGLE_TTS_CREDENTIALS' in os.environ and os.environ['GOOGLE_TTS_CREDENTIALS'].strip():
-                      creds_dict = json.loads(os.environ['GOOGLE_TTS_CREDENTIALS'])
-                      credentials = service_account.Credentials.from_service_account_info(creds_dict)
-                      client = texttospeech.TextToSpeechClient(credentials=credentials)
-                      
-                      # تقسيم النص لأن جوجل لها حد أقصى (5000 بايت) في الطلب الواحد
-                      chunk_size = 2000
-                      chunks = [clean_text[i:i+chunk_size] for i in range(0, len(clean_text), chunk_size)]
-                      
-                      voice = texttospeech.VoiceSelectionParams(
-                          language_code="ar-XA",
-                          name="ar-XA-Wavenet-B", # صوت رجالي فخم وواقعي
-                      )
-                      
-                      audio_config = texttospeech.AudioConfig(
-                          audio_encoding=texttospeech.AudioEncoding.MP3,
-                          pitch=-2.0, # تضخيم الصوت للإثارة
-                          speaking_rate=0.9 # تبطيء السرعة قليلاً للوضوح
-                      )
-                      
-                      with open("v.mp3", "wb") as out:
-                          for chunk in chunks:
-                              if len(chunk.strip()) < 2: continue
-                              input_text = texttospeech.SynthesisInput(text=chunk)
-                              response = client.synthesize_speech(
-                                  request={"input": input_text, "voice": voice, "audio_config": audio_config}
-                              )
-                              out.write(response.audio_content)
-                      print("🎙️ ✅ تم توليد الصوت الاحترافي بنجاح عبر Google Cloud TTS")
-                  else:
-                      raise Exception("لم يتم العثور على GOOGLE_TTS_CREDENTIALS في المتغيرات.")
+                  print("🎙️ جاري توليد الصوت باستخدام Sherpa-ONNX (VITS)...")
+                  import scipy.io.wavfile as wav
+                  import sherpa_onnx
+                  
+                  # إعداد الموديل العربي المجاني
+                  tts_config = sherpa_onnx.OfflineTtsModelConfig(
+                      vits=sherpa_onnx.OfflineVitsModelConfig(
+                          model="vits-arabic-pavoque-low/pavoque_low.onnx",
+                          lexicon="vits-arabic-pavoque-low/lexicon.txt",
+                          tokens="vits-arabic-pavoque-low/tokens.txt",
+                      ), num_threads=2
+                  )
+                  tts = sherpa_onnx.OfflineTts(tts_config)
+                  audio = tts.generate(clean_text)
+                  
+                  # حفظ الملف كـ wav ثم تحويله لـ mp3 ليناسب باقي الكود
+                  wav.write("v.wav", audio.sample_rate, audio.samples)
+                  os.system("ffmpeg -i v.wav -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet")
+                  print("🎙️ ✅ تم توليد الصوت الاحترافي بنجاح عبر Sherpa-ONNX")
+              
               except Exception as e:
-                  print(f"⚠️ تعذر استخدام Google TTS ({e})، سيتم استخدام edge-tts كبديل لضمان استمرار العمل...")
+                  print(f"⚠️ تعذر استخدام Sherpa-ONNX ({e})، سيتم استخدام edge-tts كبديل لضمان استمرار العمل...")
                   communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
                   await communicate.save("v.mp3")
 
           def create_story(t, d):
               full_story = ""
               current_context = d
-              print(f"🔄 البدء في توليد الملحمة (Target: 2500 - 3000 words)...")
+              print(f"🔄 البدء في توليد الملحمة (Target: 100 - 3000 words)...")
               
               iteration = 1
               max_iterations = 50 
@@ -310,7 +300,7 @@ jobs:
                   ai_story = result_data["story"]
                   
                   # === فترة انتظار عشوائية للتمويه من 1 إلى 5 دقائق قبل الرفع ===
-                  wait_time = random.randint(6, 3)
+                  wait_time = random.randint(3, 6)
                   print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية للتمويه قبل الرفع إلى اليوتيوب...")
                   time.sleep(wait_time)
                   # ============================================
