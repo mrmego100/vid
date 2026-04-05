@@ -34,21 +34,16 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          # تسطيب مكتبة espeak-ng وبرنامج ffmpeg الضروريين للصوت والمونتاج
           sudo apt-get update -q
           sudo apt-get install -y espeak-ng ffmpeg -q
           
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
-          echo "📥 جاري تحميل موديل الصوت العربي الواقعي (Sherpa-ONNX/VITS)..."
           wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
           tar xf vits-piper-ar_JO-kareem-low.tar.bz2
           rm vits-piper-ar_JO-kareem-low.tar.bz2
           
           cat << 'EOF' > script.py
-          # ==========================================
-          # استدعاء جميع المكتبات
-          # ==========================================
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
           import nest_asyncio
           import g4f
@@ -58,11 +53,9 @@ jobs:
           import scipy.io.wavfile as wav
           import sherpa_onnx
 
-          # --- حل مشكلة PIL.Image.ANTIALIAS مع MoviePy ---
           import PIL.Image
           if not hasattr(PIL.Image, 'ANTIALIAS'):
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-          # -----------------------------------------------
 
           from moviepy.editor import ImageClip, AudioFileClip
           from datetime import datetime
@@ -70,9 +63,6 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
 
-          # ==========================================
-          # إعدادات بيئة العمل
-          # ==========================================
           nest_asyncio.apply()
           urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
           warnings.filterwarnings("ignore", category=UserWarning)
@@ -81,9 +71,18 @@ jobs:
 
           HISTORY_FILE = "shows_history.txt"
 
-          # ==========================================
-          # دوال جلب وإنشاء المحتوى
-          # ==========================================
+          # =========================================================================================
+          # شرح تغيير الصوت ببساطة:
+          # 1. الموديل الحالي هو "kareem" وهو صوت جيد ومستقر.
+          # 2. لتغييره، ابحث في صفحة (sherpa-onnx tts models) على GitHub عن موديلات VITS عربية أخرى.
+          #    (مثل: vits-arabic-pavoque-low أو أي موديل من piper مثل ar_AE-hussein-low)
+          # 3. استبدل رابط التحميل (wget) في الأعلى برابط الموديل الجديد.
+          # 4. استبدل اسم المجلد "vits-piper-ar_JO-kareem-low" واسم الملف ".onnx" في الكود بالأسفل 
+          #    باسم مجلد وملف الموديل الجديد.
+          # 5. لتغيير سرعة نطق الصوت (لجعله بشري وحماسي)، قم بتغيير الرقم 1.25 في سطر ffmpeg بالأسفل.
+          #    (مثلاً: 1.10 أبطأ قليلاً، 1.30 أسرع).
+          # =========================================================================================
+
           def get_data():
               history_titles = []
               if os.path.exists(HISTORY_FILE):
@@ -127,14 +126,11 @@ jobs:
               return None
 
           async def make_audio(text):
-              # إزالة أي حروف غير عربية، إزالة التشكيل تماماً، واستبدال الفواصل بنقاط لمنع تهنيج الموديل
               clean_text = re.sub(r'[\u064B-\u065F]', '', text)
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', '.', clean_text)
               
-              print("🎙️ جاري إعداد موديل Sherpa-ONNX (VITS)...", flush=True)
-              
               if not os.path.exists("vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx"):
-                  raise Exception("❌ فشل: ملفات الموديل غير موجودة. الرابط أو التحميل فشل.")
+                  raise Exception("ملفات الموديل غير موجودة.")
 
               try:
                   tts_config = sherpa_onnx.OfflineTtsConfig(
@@ -149,44 +145,31 @@ jobs:
                   )
                   tts = sherpa_onnx.OfflineTts(tts_config)
                   
-                  # تقسيم النص لتقليل الحمل على الرامات ومنع الـ Crash
                   sentences = [s.strip() for s in clean_text.split('.') if len(s.strip()) > 3]
-                  print(f"🔄 تم تقسيم النص إلى {len(sentences)} جملة للمعالجة الآمنة...", flush=True)
-                  
                   all_samples = []
                   sample_rate = None
                   
                   for i, sentence in enumerate(sentences):
-                      print(f"   -> توليد صوت للجملة {i+1}/{len(sentences)}...", flush=True) 
-                      
                       audio = tts.generate(sentence)
-                      
                       if sample_rate is None:
                           sample_rate = audio.sample_rate
                           
                       all_samples.extend(audio.samples)
-                      
-                      # إضافة صمت قصير بعد كل جملة
-                      silence = np.zeros(int(sample_rate * 0.2), dtype=np.float32)
+                      silence = np.zeros(int(sample_rate * 0.25), dtype=np.float32)
                       all_samples.extend(silence)
                   
                   final_samples = np.array(all_samples, dtype=np.float32)
                   wav.write("v.wav", sample_rate, final_samples)
                   
-                  # تسريع الصوت بنسبة 25% لجعله حماسياً وبشرياً
-                  print("⚡ جاري تسريع الإيقاع الصوتي ومعالجته...", flush=True)
+                  # تسريع الصوت بنسبة 25% (1.25) لجعله بشري وسريع بدون ملل
                   os.system('ffmpeg -i v.wav -filter:a "atempo=1.25" -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet')
-                  
-                  print("🎙️ ✅ تم توليد الصوت السريع بنجاح", flush=True)
               
               except Exception as e:
-                  print(f"❌ حدث خطأ قاتل أثناء توليد الصوت: {e}", flush=True)
                   raise e
 
           def create_story(t, d):
               full_story = ""
               current_context = d
-              print(f"🔄 البدء في تأليف الملحمة للاختبار باللغة العربية الفصحى (~300 words)...", flush=True)
               
               iteration = 1
               max_iterations = 6 
@@ -196,16 +179,16 @@ jobs:
                   for attempt in range(3):
                       try:
                           if iteration == 1:
-                              prompt = (f"اكتب مقدمة وقصة درامية مشوقة جداً باللغة العربية الفصحى السليمة. "
-                                        f"عنوان المسلسل: {t}. "
-                                        f"بناءً على الوصف التالي: {current_context}. "
-                                        f"ابدأ بموقف درامي صادم أو خيانة لجذب الانتباه. "
-                                        f"يجب أن تكون الفقرة مسترسلة في حدود 150 كلمة، لغة عربية فصحى فقط، وبدون استخدام أي أرقام أو رموز.")
+                              prompt = (f"أنت راوي قصص محترف. اكتب ملخصاً درامياً لمسلسل بعنوان '{t}' باللغة العربية الفصحى السليمة تماماً والخالية من أي أخطاء إملائية أو نحوية. "
+                                        f"يجب أن يكون أسلوبك في السرد مطابقاً تماماً لهذا النمط المرجعي بالحرف: "
+                                        f"«تبدأ الحكاية عند المدعو هنري فورد الثاني، وريث إمبراطورية فورد، الذي استيقظ يوماً ليجد المبيعات في حالة ركود، فقرر القيام بحركة استعراضية ليغيظ بها الإيطاليين... ومن هنا بدأت المعمعة.» "
+                                        f"الوصف الأساسي: {current_context}. "
+                                        f"اكتب فقرة واحدة مسترسلة (حوالي 150 كلمة)، بدون أي أرقام أو رموز أو إضافات خارجة عن النص.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفاجئ. "
                                         f"آخر ما حدث هو: {full_story[-100:]}. "
                                         f"اكتب فقرة مسترسلة في حدود 150 كلمة. "
-                                        f"تذكر: لغة عربية فصحى فقط، سرد مشوق، وبدون استخدام أي أرقام أو رموز.")
+                                        f"تذكر: لغة عربية فصحى سليمة 100% خالية من الأخطاء الإملائية، حافظ على نفس أسلوب السرد المرجعي القوي، وبدون استخدام أي أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
                               model=g4f.models.gpt_4,
@@ -216,14 +199,10 @@ jobs:
                               chunk = re.sub(r'[*#\-]', '', response).strip()
                               full_story += " " + chunk
                               success = True
-                              current_words = len(full_story.split())
-                              print(f"✅ تم توليد الجزء {iteration} بنجاح بالفصحى. (إجمالي الكلمات: {current_words})", flush=True)
                               break
                           else:
-                              print(f"⚠️ استجابة قصيرة في الجزء {iteration} (محاولة {attempt+1})...", flush=True)
                               time.sleep(2)
                       except Exception as e:
-                          print(f"⚠️ محاولة فاشلة في الجزء {iteration} (محاولة {attempt+1})...", flush=True)
                           time.sleep(5)
                   
                   if not success:
@@ -235,72 +214,50 @@ jobs:
               words = full_story.split()
               if len(words) >= 350:
                   full_story = " ".join(words[:350])
-                  print(f"✂️ تم ضبط القصة لتكون بحدود 350 كلمة لسرعة الاختبار.", flush=True)
               
               return full_story.strip() if full_story else f""
 
           async def start_video_creation():
-              with tqdm(total=4, desc="🚀 العمل جاري", unit="step", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]') as pbar:
-                  pbar.set_description("🔍 جلب البيانات")
-                  data = get_data()
-                  if not data: 
-                      pbar.write("❌ فشل جلب البيانات.")
+              data = get_data()
+              if not data: return None
+              t = data['title']
+              ai_story = create_story(t, data['desc'])
+              
+              await make_audio(ai_story)
+              
+              final_video_name = "out.mp4"
+              try:
+                  if not os.path.exists("v.mp3"):
                       return None
                   
-                  t = data['title']
-                  pbar.write(f"🎬 العنوان المستهدف: {t}")
-                  pbar.update(1)
-
-                  pbar.set_description("🤖 تأليف الملحمة القصيرة")
-                  ai_story = create_story(t, data['desc'])
-                  word_count = len(ai_story.split())
-                  pbar.write(f"📖 الطول النهائي للقصة: {word_count} كلمة.")
-                  pbar.update(1)
-
-                  pbar.set_description("🎙️ توليد الصوت")
-                  await make_audio(ai_story)
-                  pbar.update(1)
-
-                  pbar.set_description("🎬 مونتاج الفيديو")
-                  final_video_name = "out.mp4"
-                  try:
-                      if not os.path.exists("v.mp3"):
-                          raise Exception("ملف الصوت غير موجود.")
-                      
-                      aud = AudioFileClip("v.mp3")
-                      base_vid = ImageClip("p.jpg").resize(height=720)
-                      
-                      w, h = base_vid.w, base_vid.h
-                      num_flakes = 350
-                      flakes_x = np.random.randint(0, w, num_flakes)
-                      flakes_y = np.random.randint(0, h, num_flakes)
-                      flakes_speed = np.random.randint(30, 100, num_flakes) 
-                      flakes_size = np.random.randint(1, 4, num_flakes)
-
-                      def add_snow_effect(get_frame, t_time):
-                          frame = np.copy(get_frame(t_time))
-                          for i in range(num_flakes):
-                              y = int((flakes_y[i] + t_time * flakes_speed[i]) % h)
-                              x = flakes_x[i]
-                              s = flakes_size[i]
-                              y_end = min(y + s, h)
-                              x_end = min(x + s, w)
-                              frame[y:y_end, x:x_end] = [240, 248, 255]
-                          return frame
-
-                      vid = base_vid.set_duration(aud.duration).fl(add_snow_effect).set_audio(aud)
-                      vid.write_videofile(final_video_name, fps=15, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
-                      aud.close()
-                  except Exception as e:
-                      pbar.write(f"Video Error: {e}")
-                      return None
-                  pbar.update(1)
+                  aud = AudioFileClip("v.mp3")
+                  base_vid = ImageClip("p.jpg").resize(height=720)
                   
-                  return {"title": t, "story": ai_story}
+                  w, h = base_vid.w, base_vid.h
+                  num_flakes = 350
+                  flakes_x = np.random.randint(0, w, num_flakes)
+                  flakes_y = np.random.randint(0, h, num_flakes)
+                  flakes_speed = np.random.randint(30, 100, num_flakes) 
+                  flakes_size = np.random.randint(1, 4, num_flakes)
 
-          print("\n" + "="*60)
-          print("🔄 بدء الجلسة: سيتم إنتاج ورفع فيديو واحد للاختبار...")
-          print("="*60)
+                  def add_snow_effect(get_frame, t_time):
+                      frame = np.copy(get_frame(t_time))
+                      for i in range(num_flakes):
+                          y = int((flakes_y[i] + t_time * flakes_speed[i]) % h)
+                          x = flakes_x[i]
+                          s = flakes_size[i]
+                          y_end = min(y + s, h)
+                          x_end = min(x + s, w)
+                          frame[y:y_end, x:x_end] = [240, 248, 255]
+                      return frame
+
+                  vid = base_vid.set_duration(aud.duration).fl(add_snow_effect).set_audio(aud)
+                  vid.write_videofile(final_video_name, fps=15, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
+                  aud.close()
+              except Exception as e:
+                  return None
+              
+              return {"title": t, "story": ai_story}
 
           loop = asyncio.get_event_loop()
 
@@ -311,11 +268,8 @@ jobs:
                   video_title = result_data["title"]
                   ai_story = result_data["story"]
                   
-                  wait_time = random.randint(30, 90)
-                  print(f"\n⏳ تم إنتاج الفيديو بنجاح. انتظار لمدة {wait_time} ثانية للتمويه...", flush=True)
-                  time.sleep(wait_time)
+                  time.sleep(random.randint(30, 90))
 
-                  print("\n📤 جاري الرفع إلى يوتيوب...", flush=True)
                   try:
                       if 'YOUTUBE_CREDENTIALS' in os.environ:
                           creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
@@ -344,24 +298,19 @@ jobs:
                           
                           media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
                           response = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
-                          print(f"✅ تم الرفع ليوتيوب: https://www.youtube.com/watch?v={response['id']}")
 
                           with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                               f.write(f"{video_title}|{datetime.now().strftime('%Y-%m-%d')}\n")
                   except Exception as e:
-                      print(f"❌ فشل يوتيوب: {e}")
-              else:
-                  print("⚠️ لم يتم إنتاج فيديو.")
-
+                      pass
           except Exception as e:
-              print(f"❌ حدث خطأ في الدورة: {e}")
+              pass
 
           for f in os.listdir():
               if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a")) and f != "fallback.webp":
                   try: os.remove(f)
                   except: pass
           
-          print("\n⏱️ سيتم الانتظار 4 ساعات (14400 ثانية)...", flush=True)
           time.sleep(4 * 60 * 60)
           EOF
           python script.py
@@ -378,5 +327,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "جاري إعادة تشغيل الأكشن..."
           gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
