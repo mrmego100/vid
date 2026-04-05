@@ -34,9 +34,9 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          # تسطيب مكتبة espeak-ng الضرورية لعمل موديلات Piper
+          # تسطيب مكتبة espeak-ng وبرنامج ffmpeg الضروريين للصوت والمونتاج
           sudo apt-get update -q
-          sudo apt-get install -y espeak-ng -q
+          sudo apt-get install -y espeak-ng ffmpeg -q
           
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
@@ -137,7 +137,6 @@ jobs:
                   raise Exception("❌ فشل: ملفات الموديل غير موجودة. الرابط أو التحميل فشل.")
 
               try:
-                  # === التعديل هنا: استخدام أسماء الكلاسات الجديدة بدلاً من القديمة ===
                   tts_config = sherpa_onnx.OfflineTtsConfig(
                       model=sherpa_onnx.OfflineTtsModelConfig(
                           vits=sherpa_onnx.OfflineTtsVitsModelConfig(
