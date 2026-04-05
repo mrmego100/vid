@@ -141,13 +141,33 @@ jobs:
                           model="vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx",
                           tokens="vits-piper-ar_JO-faris-low/tokens.txt",
                           data_dir="vits-piper-ar_JO-faris-low/espeak-ng-data",
-                      ), num_threads=2
+                      ), num_threads=1
                   )
                   tts = sherpa_onnx.OfflineTts(tts_config)
-                  audio = tts.generate(clean_text)
+                  
+                  # === نظام التقطيع الذكي لمنع التهنيج (Chunking) ===
+                  # استبدال الفواصل بنقاط لتسهيل التقطيع
+                  temp_text = clean_text.replace('،', '.')
+                  sentences = [s.strip() for s in temp_text.split('.') if len(s.strip()) > 3]
+                  
+                  print(f"🔄 تم تقسيم النص إلى {len(sentences)} جملة للمعالجة الآمنة...")
+                  all_samples = []
+                  sample_rate = None
+                  
+                  for i, sentence in enumerate(sentences):
+                      audio = tts.generate(sentence)
+                      if sample_rate is None:
+                          sample_rate = audio.sample_rate
+                      all_samples.extend(audio.samples)
+                      
+                      # إضافة صمت قصير (نصف ثانية) بين كل جملة لواقعية التنفس
+                      silence = np.zeros(int(sample_rate * 0.4), dtype=np.float32)
+                      all_samples.extend(silence)
+                  
+                  final_samples = np.array(all_samples, dtype=np.float32)
                   
                   # حفظ الملف كـ wav ثم تحويله لـ mp3
-                  wav.write("v.wav", audio.sample_rate, audio.samples)
+                  wav.write("v.wav", sample_rate, final_samples)
                   os.system("ffmpeg -i v.wav -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet")
                   print("🎙️ ✅ تم توليد الصوت الاحترافي بنجاح عبر Sherpa-ONNX")
               
