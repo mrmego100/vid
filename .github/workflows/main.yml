@@ -167,23 +167,26 @@ jobs:
                       all_samples.extend(audio.samples)
                       
                       # إضافة صمت قصير بعد كل جملة
-                      silence = np.zeros(int(sample_rate * 0.3), dtype=np.float32)
+                      silence = np.zeros(int(sample_rate * 0.2), dtype=np.float32)
                       all_samples.extend(silence)
                   
                   final_samples = np.array(all_samples, dtype=np.float32)
-                  
                   wav.write("v.wav", sample_rate, final_samples)
-                  os.system("ffmpeg -i v.wav -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet")
-                  print("🎙️ ✅ تم توليد الصوت بنجاح عبر Sherpa-ONNX", flush=True)
+                  
+                  # تسريع الصوت بنسبة 25% لجعله حماسياً وبشرياً
+                  print("⚡ جاري تسريع الإيقاع الصوتي ومعالجته...", flush=True)
+                  os.system('ffmpeg -i v.wav -filter:a "atempo=1.25" -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet')
+                  
+                  print("🎙️ ✅ تم توليد الصوت السريع بنجاح", flush=True)
               
               except Exception as e:
                   print(f"❌ حدث خطأ قاتل أثناء توليد الصوت: {e}", flush=True)
-                  raise e # الإيقاف الفوري لعدم وجود بديل
+                  raise e
 
           def create_story(t, d):
               full_story = ""
               current_context = d
-              print(f"🔄 البدء في تأليف الملحمة للاختبار (~300 words)...", flush=True)
+              print(f"🔄 البدء في تأليف الملحمة للاختبار باللغة العربية الفصحى (~300 words)...", flush=True)
               
               iteration = 1
               max_iterations = 6 
@@ -193,16 +196,16 @@ jobs:
                   for attempt in range(3):
                       try:
                           if iteration == 1:
-                              prompt = (f"ابدأ القصة بـ Hook تشويقي باللهجة العامية المصرية بأسلوب: 'في مسلسلنا اليوم.. {t}.. [موقف صادم أو تضحية].. وفي الآخر بيحصل [خيانة أو صدمة]!' "
-                                        f"خليه أسلوب حكواتي بيشد اللي قدامه. "
-                                        f"بعد الـ Hook، ادخل فوراً في السرد الملحمي باللغة العربية الفصحى. "
-                                        f"بناءً على الوصف: {current_context}. "
-                                        f"يجب أن تكون الفقرة مسترسلة في حدود 150 كلمة، بدون أرقام أو رموز.")
+                              prompt = (f"اكتب مقدمة وقصة درامية مشوقة جداً باللغة العربية الفصحى السليمة. "
+                                        f"عنوان المسلسل: {t}. "
+                                        f"بناءً على الوصف التالي: {current_context}. "
+                                        f"ابدأ بموقف درامي صادم أو خيانة لجذب الانتباه. "
+                                        f"يجب أن تكون الفقرة مسترسلة في حدود 150 كلمة، لغة عربية فصحى فقط، وبدون استخدام أي أرقام أو رموز.")
                           else:
-                              prompt = (f"أكمل القصة السابقة بحدث درامي جديد. "
+                              prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفاجئ. "
                                         f"آخر ما حدث هو: {full_story[-100:]}. "
                                         f"اكتب فقرة مسترسلة في حدود 150 كلمة. "
-                                        f"تذكر: لغة عربية فصحى فقط بدون أرقام أو رموز.")
+                                        f"تذكر: لغة عربية فصحى فقط، سرد مشوق، وبدون استخدام أي أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
                               model=g4f.models.gpt_4,
@@ -214,7 +217,7 @@ jobs:
                               full_story += " " + chunk
                               success = True
                               current_words = len(full_story.split())
-                              print(f"✅ تم توليد الجزء {iteration} بنجاح. (إجمالي الكلمات: {current_words})", flush=True)
+                              print(f"✅ تم توليد الجزء {iteration} بنجاح بالفصحى. (إجمالي الكلمات: {current_words})", flush=True)
                               break
                           else:
                               print(f"⚠️ استجابة قصيرة في الجزء {iteration} (محاولة {attempt+1})...", flush=True)
