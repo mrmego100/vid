@@ -33,8 +33,9 @@ jobs:
       - name: 🚀 Create and Run Script
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+          GOOGLE_TTS_CREDENTIALS: ${{ secrets.GOOGLE_TTS_CREDENTIALS }}
         run: |
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy google-cloud-text-to-speech -q
           
           cat << 'EOF' > script.py
           # ==========================================
@@ -59,6 +60,8 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
+          from google.cloud import texttospeech
+          from google.oauth2 import service_account
 
           # ==========================================
           # إعدادات بيئة العمل
@@ -119,8 +122,43 @@ jobs:
 
           async def make_audio(text):
               clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
-              communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
-              await communicate.save("v.mp3")
+              
+              try:
+                  if 'GOOGLE_TTS_CREDENTIALS' in os.environ and os.environ['GOOGLE_TTS_CREDENTIALS'].strip():
+                      creds_dict = json.loads(os.environ['GOOGLE_TTS_CREDENTIALS'])
+                      credentials = service_account.Credentials.from_service_account_info(creds_dict)
+                      client = texttospeech.TextToSpeechClient(credentials=credentials)
+                      
+                      # تقسيم النص لأن جوجل لها حد أقصى (5000 بايت) في الطلب الواحد
+                      chunk_size = 2000
+                      chunks = [clean_text[i:i+chunk_size] for i in range(0, len(clean_text), chunk_size)]
+                      
+                      voice = texttospeech.VoiceSelectionParams(
+                          language_code="ar-XA",
+                          name="ar-XA-Wavenet-B", # صوت رجالي فخم وواقعي
+                      )
+                      
+                      audio_config = texttospeech.AudioConfig(
+                          audio_encoding=texttospeech.AudioEncoding.MP3,
+                          pitch=-2.0, # تضخيم الصوت للإثارة
+                          speaking_rate=0.9 # تبطيء السرعة قليلاً للوضوح
+                      )
+                      
+                      with open("v.mp3", "wb") as out:
+                          for chunk in chunks:
+                              if len(chunk.strip()) < 2: continue
+                              input_text = texttospeech.SynthesisInput(text=chunk)
+                              response = client.synthesize_speech(
+                                  request={"input": input_text, "voice": voice, "audio_config": audio_config}
+                              )
+                              out.write(response.audio_content)
+                      print("🎙️ ✅ تم توليد الصوت الاحترافي بنجاح عبر Google Cloud TTS")
+                  else:
+                      raise Exception("لم يتم العثور على GOOGLE_TTS_CREDENTIALS في المتغيرات.")
+              except Exception as e:
+                  print(f"⚠️ تعذر استخدام Google TTS ({e})، سيتم استخدام edge-tts كبديل لضمان استمرار العمل...")
+                  communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
+                  await communicate.save("v.mp3")
 
           def create_story(t, d):
               full_story = ""
@@ -130,7 +168,7 @@ jobs:
               iteration = 1
               max_iterations = 50 
               
-              while len(full_story.split()) < 2500 and iteration <= max_iterations:
+              while len(full_story.split()) < 100 and iteration <= max_iterations:
                   success = False
                   for attempt in range(5):
                       try:
@@ -139,12 +177,12 @@ jobs:
                                         f"خليه أسلوب حكواتي بيشد اللي قدامه. "
                                         f"بعد الـ Hook، ادخل فوراً في السرد الملحمي والمفصل جداً باللغة العربية الفصحى. "
                                         f"بناءً على الوصف: {current_context}. "
-                                        f"يجب أن تكون الفقرة طويلة جداً لا تقل عن 400 كلمة، ركز على أدق التفاصيل في المشهد، "
+                                        f"يجب أن تكون الفقرة طويلة جداً لا تقل عن 10 كلمة، ركز على أدق التفاصيل في المشهد، "
                                         f"الألوان، الروائح، والمشاعر. اجعل النص مسترسلاً بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
-                                        f"آخر ما حدث هو: {full_story[-800:]}. "
-                                        f"اكتب فقرة طويلة جداً لا تقل عن 400 كلمة. "
+                                        f"آخر ما حدث هو: {full_story[-80:]}. "
+                                        f"اكتب فقرة طويلة جداً لا تقل عن 10 كلمة. "
                                         f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
                                         f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط بدون أرقام أو رموز.")
 
@@ -272,7 +310,7 @@ jobs:
                   ai_story = result_data["story"]
                   
                   # === فترة انتظار عشوائية للتمويه من 1 إلى 5 دقائق قبل الرفع ===
-                  wait_time = random.randint(60, 300)
+                  wait_time = random.randint(6, 3)
                   print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية للتمويه قبل الرفع إلى اليوتيوب...")
                   time.sleep(wait_time)
                   # ============================================
