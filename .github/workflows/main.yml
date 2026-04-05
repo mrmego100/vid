@@ -70,7 +70,7 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # أصوات مميزة جداً لضمان الفرق
-          VOICE_RAWI = "ar-KW-FahedNeural"  # راوي خليجي فخم (مختلف تماماً)
+          VOICE_RAWI = "ar-KW-FahedNeural"  # راوي خليجي فخم رزين
           VOICE_MALE = "ar-EG-ShakirNeural" # بطل مصري حماسي
           VOICE_FEMALE = "ar-EG-SalmaNeural" # بطلة مصرية درامية
 
@@ -106,26 +106,28 @@ jobs:
               except: return None
 
           def create_script(t, d):
-              print("🤖 تأليف السيناريو بنظام الـ Hook...", flush=True)
+              print("🤖 تأليف السيناريو بنظام الـ Hook المشوق...", flush=True)
               prompt = (f"اكتب سيناريو درامي لمسلسل '{t}' بناءً على: {d}. "
                         "الترتيب: "
-                        "1. [MALE] أو [FEMALE]: ابدأ بـ Hook (حوار صادم وسريع جداً، جملة واحدة). "
-                        "2. [RAWI]: ادخل بالوصف الدرامي للقصة. "
-                        "3. تبادل حوار بين [MALE] و [FEMALE] و [RAWI]. "
+                        "1. [MALE] أو [FEMALE]: ابدأ بـ Hook (موقف صادم وحوار سريع جداً وقوي، جملة واحدة). "
+                        "2. [RAWI]: ادخل بالوصف الدرامي العميق للقصة. "
+                        "3. تبادل حوار مستمر بين [MALE] و [FEMALE] و [RAWI] لتلخيص القصة. "
                         "ممنوع ذكر الأسماء. إذا كان هناك غضب اكتب (بغضب) في بداية الفقرة.")
               try:
                   return g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}]).strip()
               except: return ""
 
           async def generate_audio(script):
-              print("🎙️ توليد الأصوات (الراوي الخليجي vs الأبطال المصريين)...", flush=True)
+              print("🎙️ توليد الأصوات (الراوي الكويتي vs الأبطال المصريين)...", flush=True)
               segments = re.findall(r'\[(RAWI|MALE|FEMALE)\](.*?)(?=\[(?:RAWI|MALE|FEMALE)\]|$)', script, re.DOTALL)
               clips = []
-              anger_list = ['بغضب', 'بصراخ', 'خيانة', 'مستحيل', 'يكفي']
+              anger_list = ['بغضب', 'بصراخ', 'خيانة', 'مستحيل', 'يكفي', 'توقف']
 
               for i, (role, text) in enumerate(segments):
                   text = text.strip()
                   if len(text) < 2: continue
+                  
+                  # سرعة ديناميكية بناءً على الغضب
                   rate = "+25%" if any(w in text for w in anger_list) else "+3%"
                   voice = VOICE_RAWI if role == "RAWI" else (VOICE_MALE if role == "MALE" else VOICE_FEMALE)
                   
@@ -133,12 +135,18 @@ jobs:
                   fname = f"s_{i}.mp3"
                   try:
                       await edge_tts.Communicate(clean_text, voice, rate=rate).save(fname)
-                      clips.append(AudioFileClip(fname))
-                      clips.append(AudioFileClip(fname).volumex(0).set_duration(0.3))
+                      c = AudioFileClip(fname)
+                      clips.append(c)
+                      # وقفة بسيطة
+                      silence = c.volumex(0).set_duration(0.3)
+                      clips.append(silence)
                   except: continue
 
               if clips:
-                  concatenate_audioclips(clips).write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                  final_aud = concatenate_audioclips(clips)
+                  final_aud.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                  # تنظيف الذاكرة
+                  for c in clips: c.close()
                   return True
               return False
 
@@ -150,8 +158,8 @@ jobs:
               if not script: return
               
               if await generate_audio(script):
-                  print("🎬 المونتاج السينمائي لـ MegoDrama...", flush=True)
-                  # اللوجو والخط
+                  print("🎬 بدء المونتاج السينمائي لـ MegoDrama...", flush=True)
+                  # 1. اللوجو والخط
                   img = Image.new('RGBA', (500, 150), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: font = ImageFont.truetype("Roboto-Bold.ttf", 65)
@@ -159,9 +167,11 @@ jobs:
                   draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
                   draw.line((10, 95, 420, 95), fill=(255, 255, 255, 255), width=5)
                   img.save("logo.png")
+                  print("   -> تم تصميم اللوجو.", flush=True)
 
-                  # الموجات
+                  # 2. الموجات
                   os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=500x120:colors=0x00FFFF:mode=cline,crop=500:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp.mp4 -y -loglevel quiet')
+                  print("   -> تم إنتاج الموجات.", flush=True)
 
                   aud = AudioFileClip("v.mp3")
                   base = ImageClip("p.jpg").resize(height=720).set_duration(aud.duration)
@@ -169,20 +179,30 @@ jobs:
                   
                   if os.path.exists("temp.mp4"):
                       waves = VideoFileClip("temp.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((40, 135)).set_opacity(0.9)
-                      CompositeVideoClip([base, logo, waves]).set_audio(aud).write_videofile("out.mp4", fps=15, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                      print("   -> جاري دمج العناصر وكتابة الفيديو النهائي...", flush=True)
+                      final = CompositeVideoClip([base, logo, waves]).set_audio(aud)
+                      final.write_videofile("out.mp4", fps=10, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                      
+                      final.close()
+                      waves.close()
                   
+                  base.close()
+                  logo.close()
+                  aud.close()
+
                   if os.path.exists("out.mp4") and 'YOUTUBE_CREDENTIALS' in os.environ:
-                      print("📤 رفع الفيديو...", flush=True)
+                      print("📤 جاري الرفع إلى يوتيوب...", flush=True)
                       try:
                           creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
                           youtube = build('youtube', 'v3', credentials=creds)
                           body = {
-                              'snippet': {'title': f"ملخص مسلسل {data['title']} | دراما حصرية", 'description': f"ملخص {data['title']}.\nإنتاج: MegoDrama", 'categoryId': '24'},
+                              'snippet': {'title': f"ملخص مسلسل {data['title']} | دراما حصرية", 'description': f"أقوى ملخص لـ {data['title']}.\nإنتاج: MegoDrama", 'categoryId': '24'},
                               'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
                           }
                           youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True)).execute()
-                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(f"{data['title']}|{datetime.now()}\n")
-                      except: pass
+                          with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                          print("✅ تم الرفع بنجاح!", flush=True)
+                      except Exception as e: print(f"❌ فشل الرفع: {e}")
 
           if __name__ == "__main__":
               asyncio.run(run_main())
