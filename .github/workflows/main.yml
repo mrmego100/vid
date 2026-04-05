@@ -41,7 +41,6 @@ jobs:
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
           echo "📥 جاري تحميل موديل الصوت العربي الواقعي (Sherpa-ONNX/VITS)..."
-          # تم تصحيح رابط التحميل لاسم الموديل الحقيقي (kareem-low)
           wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
           tar xf vits-piper-ar_JO-kareem-low.tar.bz2
           rm vits-piper-ar_JO-kareem-low.tar.bz2
@@ -134,17 +133,20 @@ jobs:
               
               print("🎙️ جاري إعداد موديل Sherpa-ONNX (VITS)...", flush=True)
               
-              # تم تصحيح المسارات لاسم الموديل kareem-low
               if not os.path.exists("vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx"):
                   raise Exception("❌ فشل: ملفات الموديل غير موجودة. الرابط أو التحميل فشل.")
 
               try:
-                  tts_config = sherpa_onnx.OfflineTtsModelConfig(
-                      vits=sherpa_onnx.OfflineVitsModelConfig(
-                          model="vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx",
-                          tokens="vits-piper-ar_JO-kareem-low/tokens.txt",
-                          data_dir="vits-piper-ar_JO-kareem-low/espeak-ng-data",
-                      ), num_threads=1
+                  # === التعديل هنا: استخدام أسماء الكلاسات الجديدة بدلاً من القديمة ===
+                  tts_config = sherpa_onnx.OfflineTtsConfig(
+                      model=sherpa_onnx.OfflineTtsModelConfig(
+                          vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                              model="vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx",
+                              tokens="vits-piper-ar_JO-kareem-low/tokens.txt",
+                              data_dir="vits-piper-ar_JO-kareem-low/espeak-ng-data",
+                          ),
+                          num_threads=1
+                      )
                   )
                   tts = sherpa_onnx.OfflineTts(tts_config)
                   
