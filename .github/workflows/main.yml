@@ -51,7 +51,6 @@ jobs:
           import edge_tts
           from PIL import Image, ImageDraw, ImageFont
 
-          # حل مشكلة Pillow مع الإصدارات القديمة من MoviePy
           import PIL.Image
           if not hasattr(PIL.Image, 'ANTIALIAS'):
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -71,18 +70,17 @@ jobs:
 
           HISTORY_FILE = "shows_history.txt"
 
-          # إعدادات الأصوات (بدون راوي)
-          VOICE_MALE = "ar-EG-ShakirNeural"   # بطل (مصري حماسي)
-          VOICE_FEMALE = "ar-EG-SalmaNeural" # بطلة (مصرية درامية)
+          # إعدادات الأصوات
+          VOICE_MALE = "ar-EG-ShakirNeural"
+          VOICE_FEMALE = "ar-EG-SalmaNeural"
 
           def get_data():
-              print("🔍 جاري جلب بيانات المسلسل الجديد...", flush=True)
+              print("🔍 جاري جلب البيانات من المصدر...", flush=True)
               history = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                       for line in f:
                           if "|" in line: history.append(line.split("|")[0].strip())
-              
               base = "https://www.shorttv.live"
               try:
                   r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
@@ -94,59 +92,77 @@ jobs:
                       if not img: continue
                       title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
                       if len(title) < 5 or title in history: continue
-                      
                       t_url = a['href'] if a['href'].startswith('http') else base + a['href']
                       s_page = requests.get(t_url, verify=False, timeout=5)
-                      desc_meta = BeautifulSoup(s_page.text, 'html.parser').find('meta', attrs={'name': 'description'})
-                      desc = desc_meta.get('content', '') if desc_meta else "قصة درامية"
-                      
+                      desc_m = BeautifulSoup(s_page.text, 'html.parser').find('meta', attrs={'name': 'description'})
+                      desc = desc_m.get('content', '') if desc_m else "دراما واقعية"
                       i_url = img.get('src') or img.get('data-src')
                       if i_url.startswith('//'): i_url = "https:" + i_url
                       with open("p.jpg", "wb") as f: f.write(requests.get(i_url).content)
                       return {"title": title, "desc": desc}
               except: return None
 
-          def create_script(t, d):
-              print("🤖 تأليف سيناريو المواجهة (بدون راوي)...", flush=True)
-              prompt = (f"اكتب حواراً درامياً طويلاً بين بطل وبطلة يلخص أحداث مسلسل بعنوان '{t}' بناءً على: {d}. "
-                        "القواعد:\n"
-                        "1. الفيديو يبدأ فوراً بـ [HOOK] صادم (جملة قوية من أحد الأبطال في مواجهة الآخر).\n"
-                        "2. لا يوجد راوي (No Narrator). الحوار فقط هو من يشرح القصة.\n"
-                        "3. استخدم الوسوم [MALE] للرجل و [FEMALE] للأنثى.\n"
-                        "4. اجعل الأحداث واقعية ومفهومة؛ مثلاً (البطل: كيف تجرئين على بيع الشركة؟ البطلة: كان علي فعل ذلك لإنقاذ عائلتنا!).\n"
-                        "5. إذا كانت الجملة تعبر عن غضب أو صدمة، ابدأها بكلمة (بغضب) أو (بصراخ).\n"
-                        "6. النص حوالي 350 كلمة.")
-              try:
-                  return g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}]).strip()
-              except: return ""
+          def create_long_script(t, d):
+              print(f"🤖 جاري تأليف سيناريو ملحمي مطول لمسلسل {t}...", flush=True)
+              full_script = ""
+              current_word_count = 0
+              target_word_count = 2100 # الشرط الإجباري
+              
+              iteration = 1
+              while current_word_count < target_word_count and iteration < 10:
+                  if iteration == 1:
+                      prompt = (f"اكتب الجزء الأول من حوار درامي طويل جداً بين بطل وبطلة لمسلسل '{t}' بناءً على: {d}. "
+                                "ابدأ بـ [HOOK] صادم ومواجهة نارية. ممنوع وجود راوي تماماً. "
+                                "استخدم فقط [MALE] و [FEMALE]. ممنوع استخدام أي مقدمات أو رموز أو نجوم ***. "
+                                "اكتب حوالي 500 كلمة في هذا الجزء.")
+                  else:
+                      prompt = (f"أكمل الحوار الدرامي السابق لمسلسل '{t}'. "
+                                f"آخر ما حدث هو: {full_script[-200:]}. "
+                                "استمر في سرد أحداث المسلسل الحقيقية من خلال الحوار المباشر بين البطل والبطلة فقط. "
+                                "ممنوع الراوي، ممنوع الرموز، ممنوع النجوم ***. اكتب 500 كلمة إضافية.")
 
-          async def process_multivocal_audio(script):
-              print("🎙️ معالجة الأصوات المتفاعلة (سرعة ديناميكية بناءً على المشاعر)...", flush=True)
+                  try:
+                      response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
+                      # تنظيف النص من النجوم والرموز فوراً
+                      clean_chunk = re.sub(r'[*#_\\-]', '', response).strip()
+                      full_script += "\n" + clean_chunk
+                      current_word_count = len(full_script.split())
+                      print(f"   -> تم توليد {current_word_count} كلمة حتى الآن...", flush=True)
+                      iteration += 1
+                      time.sleep(2)
+                  except: break
+              
+              return full_script.strip()
+
+          async def process_audio(script):
+              print("🎙️ معالجة الأصوات (تفاعل حي بناءً على المشاعر)...", flush=True)
+              # التقاط الوسوم مع النص
               segments = re.findall(r'\[(MALE|FEMALE|HOOK)\](.*?)(?=\[(?:MALE|FEMALE|HOOK)\]|$)', script, re.DOTALL)
               clips = []
               
-              anger_keys = ['بغضب', 'بصراخ', 'خيانة', 'مستحيل', 'يكفي', 'توقف', 'أكرهك']
-              calm_keys = ['أعتذر', 'هدوء', 'سامحني', 'لماذا', 'بهدوء']
+              # قواميس التفاعل
+              fast_keys = ['بغضب', 'بصراخ', 'بسرعة', 'خيانة', 'مستحيل', 'يكفي', 'أكرهك', 'صدمة']
+              slow_keys = ['ندم', 'هدوء', 'حزن', 'لماذا', 'بهدوء', 'آسف', 'ببكاء']
+              joy_keys = ['بفرح', 'بضحك', 'سعادة', 'بابتسامة']
 
               for i, (role, text) in enumerate(segments):
                   text = text.strip()
                   if len(text) < 2: continue
                   
-                  # تحديد السرعة (تفاعل واقعي)
-                  rate = "+25%" if any(w in text for w in anger_keys) else ("-5%" if any(w in text for w in calm_keys) else "+3%")
+                  # تحديد نبرة التفاعل
+                  rate = "+28%" if any(w in text for w in fast_keys) else ("-8%" if any(w in text for w in slow_keys) else ("+15%" if any(w in text for w in joy_keys) else "+4%"))
                   
-                  # اختيار الصوت (الـ Hook يأخذ صوت الرجل أو المرأة حسب ترتيب السيناريو)
                   voice = VOICE_MALE if role in ["MALE", "HOOK"] and i % 2 == 0 else VOICE_FEMALE
                   if role == "FEMALE": voice = VOICE_FEMALE
                   
+                  # تنظيف النص النهائي للنطق
                   clean_text = re.sub(r'\(.*?\)', '', text).strip()
                   fname = f"s_{i}.mp3"
                   try:
                       await edge_tts.Communicate(clean_text, voice, rate=rate).save(fname)
                       c = AudioFileClip(fname)
                       clips.append(c)
-                      # وقفة درامية قصيرة بين الجمل
-                      clips.append(c.volumex(0).set_duration(0.3))
+                      clips.append(c.volumex(0).set_duration(0.3)) # وقفة طبيعية
                   except: continue
 
               if clips:
@@ -156,26 +172,25 @@ jobs:
                   return True
               return False
 
-          async def run_production():
+          async def start_production():
               data = get_data()
               if not data: return
               
-              script = create_script(data['title'], data['desc'])
-              if not script: return
+              script = create_long_script(data['title'], data['desc'])
+              if len(script.split()) < 100: return
               
-              if await process_multivocal_audio(script):
-                  print("🎬 المونتاج النهائي: تصميم MegoDrama المطور...", flush=True)
-                  # 1. تصميم اللوجو والخط الأنيق
+              if await process_audio(script):
+                  print("🎬 المونتاج السينمائي النهائي لـ MegoDrama...", flush=True)
+                  # 1. اللوجو والخط
                   img = Image.new('RGBA', (500, 150), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: font = ImageFont.truetype("Roboto-Bold.ttf", 65)
                   except: font = ImageFont.load_default()
-                  
-                  draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255)) # Cyan
-                  draw.line((10, 95, 420, 95), fill=(255, 255, 255, 255), width=5) # White Line
+                  draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
+                  draw.line((10, 95, 420, 95), fill=(255, 255, 255, 255), width=5)
                   img.save("logo.png")
 
-                  # 2. الموجات الصوتية النابضة للأسفل
+                  # 2. الموجات
                   os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=500x120:colors=0x00FFFF:mode=cline,crop=500:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
                   aud = AudioFileClip("v.mp3")
@@ -183,24 +198,19 @@ jobs:
                   logo = ImageClip("logo.png").set_duration(aud.duration).set_position((40, 40))
                   
                   if os.path.exists("temp_waves.mp4"):
-                      waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5)
-                      waves = waves.set_position((40, 135)).set_opacity(0.9) # تحت الخط مباشرة
+                      waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((40, 135)).set_opacity(0.9)
                       final_vid = CompositeVideoClip([base, logo, waves]).set_audio(aud)
-                  else:
-                      final_vid = CompositeVideoClip([base, logo]).set_audio(aud)
-
-                  final_vid.write_videofile("out.mp4", fps=12, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                      final_vid.write_videofile("out.mp4", fps=10, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
-                  # الرفع لليوتيوب
-                  if 'YOUTUBE_CREDENTIALS' in os.environ:
+                  if os.path.exists("out.mp4") and 'YOUTUBE_CREDENTIALS' in os.environ:
                       print("📤 جاري الرفع إلى يوتيوب...", flush=True)
                       try:
                           creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
                           youtube = build('youtube', 'v3', credentials=creds)
                           body = {
                               'snippet': {
-                                  'title': f"مواجهة نارية في مسلسل {data['title']} | ملخص سينمائي",
-                                  'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بأسلوب حواري واقعي.\nإنتاج: MegoDrama",
+                                  'title': f"مواجهة نارية في مسلسل {data['title']} | القصة كاملة",
+                                  'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بدون راوي.\nإنتاج: MegoDrama",
                                   'categoryId': '24'
                               },
                               'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
@@ -211,14 +221,13 @@ jobs:
                           print("✅ تم الإنتاج والرفع بنجاح!")
                       except Exception as e: print(f"❌ فشل الرفع: {e}")
                   
-                  # تنظيف
                   aud.close()
                   base.close()
                   logo.close()
 
           if __name__ == "__main__":
-              asyncio.run(run_production())
-              print("⏱️ الجلسة مستمرة لمدة 4 ساعات لضمان ثبات العمل...")
+              asyncio.run(start_production())
+              print("⏱️ الجلسة مستمرة لمدة 4 ساعات...")
               time.sleep(4 * 60 * 60)
           EOF
           python -u script.py
@@ -228,7 +237,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add shows_history.txt || true
-          git commit -m "Update trends history" || true
+          git commit -m "Update history" || true
           git push || true
 
       - name: ⏳ Persistence
