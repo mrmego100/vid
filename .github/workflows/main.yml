@@ -39,14 +39,12 @@ jobs:
           
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
-          # تحميل خط عصري لتصميم MegoDrama
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           echo "📥 جاري تحميل موديل الصوت..."
-          # استخدمنا صوت "faris" لأنه أعمق ومناسب للدراما
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-faris-low.tar.bz2
-          tar xf vits-piper-ar_JO-faris-low.tar.bz2
-          rm vits-piper-ar_JO-faris-low.tar.bz2
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
+          tar xf vits-piper-ar_JO-kareem-low.tar.bz2
+          rm vits-piper-ar_JO-kareem-low.tar.bz2
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
@@ -76,15 +74,6 @@ jobs:
           os.environ["SDL_VIDEODRIVER"] = "dummy"
 
           HISTORY_FILE = "shows_history.txt"
-
-          # =========================================================================================
-          # 💡 شرح تغيير الصوت ببساطة:
-          # 1. الموديل الحالي هو "faris" (عربي أردني فصحى - صوت رجولي عميق).
-          # 2. لتغييره، اذهب إلى الرابط: github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
-          # 3. ابحث عن موديلات تبدأ بـ vits-piper-ar مثل (ar_JO-kareem-low أو ar_AE-hussein-low)
-          # 4. في السطر الخاص بـ wget بالأعلى، ضع الرابط الجديد واسم الملف الجديد.
-          # 5. في الكود بالأسفل، قم بتغيير كلمة "faris" لاسم الموديل الجديد في الـ 3 مسارات.
-          # =========================================================================================
 
           def get_data():
               print("🔍 جاري جلب البيانات...", flush=True)
@@ -131,27 +120,25 @@ jobs:
               return None
 
           async def make_audio(text):
-              # فلترة متقدمة لمنع أكل الكلام والأخطاء
               clean_text = re.sub(r'[\u064B-\u065F]', '', text)
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', ' ', clean_text)
               
-              # إضافة نقطة بعد كل مجموعة كلمات لضمان أخذ الموديل لوقفات تنفس طبيعية
               words = clean_text.split()
               chunked_text = ""
               for i in range(0, len(words), 5):
                   chunked_text += " ".join(words[i:i+5]) + ". "
               
-              print("🎙️ جاري توليد الصوت باستخدام Sherpa-ONNX...", flush=True)
-              if not os.path.exists("vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx"):
+              print("🎙️ جاري توليد الصوت...", flush=True)
+              if not os.path.exists("vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx"):
                   raise Exception("ملفات الموديل غير موجودة.")
 
               try:
                   tts_config = sherpa_onnx.OfflineTtsConfig(
                       model=sherpa_onnx.OfflineTtsModelConfig(
                           vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                              model="vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx",
-                              tokens="vits-piper-ar_JO-faris-low/tokens.txt",
-                              data_dir="vits-piper-ar_JO-faris-low/espeak-ng-data",
+                              model="vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx",
+                              tokens="vits-piper-ar_JO-kareem-low/tokens.txt",
+                              data_dir="vits-piper-ar_JO-kareem-low/espeak-ng-data",
                           ),
                           num_threads=1
                       )
@@ -168,15 +155,13 @@ jobs:
                           sample_rate = audio.sample_rate
                           
                       all_samples.extend(audio.samples)
-                      # مساحة صمت مناسبة للحد من تداخل الحروف
                       silence = np.zeros(int(sample_rate * 0.20), dtype=np.float32)
                       all_samples.extend(silence)
                   
                   final_samples = np.array(all_samples, dtype=np.float32)
                   wav.write("v.wav", sample_rate, final_samples)
                   
-                  print("⚡ جاري تسريع الإيقاع الصوتي بشكل آمن (15%)...", flush=True)
-                  # تم تقليل السرعة لـ 1.15 لتكون سريعة ولكن تحافظ على وضوح الحروف 100%
+                  print("⚡ جاري تسريع الإيقاع الصوتي بشكل آمن...", flush=True)
                   os.system('ffmpeg -i v.wav -filter:a "atempo=1.15" -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet')
                   print("✅ تم توليد الصوت بنجاح.", flush=True)
               except Exception as e:
@@ -203,7 +188,7 @@ jobs:
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي. "
                                         f"آخر ما حدث هو: {full_story[-100:]}. "
-                                        f"**تنبيه صارم:** لا تكتب أي مقدمات أو ردود أو مجاملات للذكاء الاصطناعي. ابدأ بالقصة فوراً. "
+                                        f"**تنبيه صارم:** لا تكتب أي مقدمات أو ردود أو مجاملات. ابدأ بالقصة فوراً. "
                                         f"اكتب فقرة مسترسلة (150 كلمة). حافظ على أسلوب السرد المرجعي القوي، لغة فصحى خالية من الأخطاء، وبدون أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
@@ -212,14 +197,13 @@ jobs:
                           )
                           
                           if response and len(response) > 50:
-                              # فلترة مسلحة لإزالة أي ردود من الـ AI
                               chunk = re.sub(r'[*#\-]', '', response).strip()
                               chunk = re.sub(r'^(بالطبع|إليك|حسناً|إليك الملخص|بكل سرور|مقدمة|قصة|الملخص|وفق طلبك|إليك القصة)[\s:،.-]*', '', chunk).strip()
                               chunk = re.sub(r'^(بالتأكيد|ها هو)[\s:،.-]*', '', chunk).strip()
                               
                               full_story += " " + chunk
                               success = True
-                              print(f"✅ تم توليد الجزء {iteration} بنجاح. (إجمالي الكلمات: {len(full_story.split())})", flush=True)
+                              print(f"✅ تم توليد الجزء {iteration} بنجاح.", flush=True)
                               break
                           else:
                               time.sleep(2)
@@ -252,9 +236,6 @@ jobs:
                   if not os.path.exists("v.mp3"):
                       return None
                   
-                  # ===================================================================
-                  # 1. إنشاء صورة (Logo) تحتوي على MegoDrama والخط
-                  # ===================================================================
                   img = Image.new('RGBA', (400, 100), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try:
@@ -262,22 +243,15 @@ jobs:
                   except:
                       font = ImageFont.load_default()
                   
-                  # كتابة MegoDrama باللون السماوي الأنيق
                   draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
-                  # رسم خط تحت الكلمة
                   draw.line((10, 85, 360, 85), fill=(255, 255, 255, 255), width=4)
                   img.save("logo.png")
 
-                  # ===================================================================
-                  # 2. إنشاء موجات صوتية تنبض للأسفل من الخط
-                  # ===================================================================
-                  # نولد الموجات ونقطع النصف السفلي منها (لكي تنبض للأسفل فقط)
                   os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x100:colors=0x00FFFF:mode=cline,crop=400:50:0:50,format=yuv420p[v]" -map "[v]" -map 0:a -c:v libx264 -c:a copy -t $(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 v.mp3) temp_waves.mp4 -y -loglevel quiet')
 
                   aud = AudioFileClip("v.mp3")
                   base_vid = ImageClip("p.jpg").resize(height=720)
                   
-                  # إضافة الثلج كالمعتاد
                   w, h = base_vid.w, base_vid.h
                   num_flakes = 350
                   flakes_x = np.random.randint(0, w, num_flakes)
@@ -298,9 +272,6 @@ jobs:
 
                   snow_vid = base_vid.set_duration(aud.duration).fl(add_snow_effect)
                   
-                  # ===================================================================
-                  # 3. دمج اللوجو والموجات مع الفيديو بخلفية شفافة
-                  # ===================================================================
                   clips_to_composite = [snow_vid]
                   
                   if os.path.exists("logo.png"):
@@ -308,7 +279,6 @@ jobs:
                       clips_to_composite.append(logo_clip)
                       
                   if os.path.exists("temp_waves.mp4"):
-                      # نجعل الخلفية السوداء شفافة، ونضع الموجات ملاصقة تماماً للخط السفلي للوجو
                       waves_clip = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5)
                       waves_clip = waves_clip.set_position((30, 30 + 85)).set_opacity(0.85).set_start(0)
                       clips_to_composite.append(waves_clip)
