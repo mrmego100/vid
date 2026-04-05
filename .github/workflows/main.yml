@@ -38,10 +38,14 @@ jobs:
           sudo apt-get install -y ffmpeg git -q
           
           echo "📥 جاري تثبيت مكتبة Bark والمكتبات الأساسية..."
-          # تحديد إصدار PyTorch 2.5.1 لتجنب أخطاء الحماية في الإصدار 2.6 الجديد
+          # تحديد إصدار PyTorch 2.5.1 لتجنب أخطاء الحماية
           pip install "torch==2.5.1" "torchaudio==2.5.1" requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy git+https://github.com/suno-ai/bark.git -q
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
+          
+          echo "📥 جاري تحميل بصمة الصوت العربي مباشرة لتخطي حظر HuggingFace..."
+          # تحميل ملف الصوت مباشرة إلى السيرفر لتجنب خطأ history prompt not found
+          wget -q https://huggingface.co/suno/bark/resolve/main/speaker_embeddings/v2/ar_speaker_3.npz -O ar_speaker_3.npz
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
@@ -53,7 +57,7 @@ jobs:
           import scipy.io.wavfile as wav
 
           # =========================================================================================
-          # 🚀 إعدادات مكتبة Bark (مهمة جداً لتعمل على GitHub Actions بدون كراش)
+          # 🚀 إعدادات مكتبة Bark للعمل على المعالج (CPU)
           # =========================================================================================
           os.environ["SUNO_OFFLOAD_CPU"] = "True"
           os.environ["SUNO_USE_SMALL_MODELS"] = "True"
@@ -82,11 +86,9 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # =========================================================================================
-          # 🎛️ إعدادات المعلق الصوتي لـ Bark
-          # الأصوات العربية المتاحة هي من: "v2/ar_speaker_0" إلى "v2/ar_speaker_9"
-          # يمكنك تجربة الأرقام المختلفة للحصول على طبقة الصوت المناسبة لك.
+          # 🎛️ قراءة الصوت المحلي المحمل مسبقاً لتفادي مشاكل الاتصال
           # =========================================================================================
-          BARK_VOICE = "v2/ar_speaker_3"
+          BARK_VOICE = "ar_speaker_3.npz"
           # =========================================================================================
 
           def get_data():
@@ -142,14 +144,13 @@ jobs:
               print("📥 جاري تحميل موديلات Bark في الرام...", flush=True)
               preload_models()
               
-              print(f"🎙️ جاري توليد الصوت باستخدام Bark بصوت ({BARK_VOICE})...", flush=True)
+              print(f"🎙️ جاري توليد الصوت باستخدام Bark...", flush=True)
               
-              # Bark لا يدعم نصوص طويلة جداً (أكثر من 14 ثانية)، لذلك يجب التقطيع إلى جمل قصيرة.
               sentences = [s.strip() for s in clean_text.split('.') if len(s.strip()) > 2]
               all_audio = []
               
               for i, sentence in enumerate(sentences):
-                  print(f"   -> توليد المقطع {i+1}/{len(sentences)} (قد يستغرق بعض الوقت على المعالج)...", flush=True)
+                  print(f"   -> توليد المقطع {i+1}/{len(sentences)} (يتم الآن على المعالج المحلي)...", flush=True)
                   try:
                       audio_array = generate_audio(sentence, history_prompt=BARK_VOICE)
                       all_audio.append(audio_array)
@@ -357,7 +358,7 @@ jobs:
               print(f"❌ حدث خطأ غير متوقع: {e}", flush=True)
 
           for f in os.listdir():
-              if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a", ".png")) and f != "fallback.webp":
+              if f.endswith((".mp3", ".wav", ".jpg", ".webp", ".mp4", ".m4a", ".png", ".npz")) and f != "fallback.webp":
                   try: os.remove(f)
                   except: pass
           
