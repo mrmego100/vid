@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg -q
           
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy edge-tts scipy -q
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
@@ -49,148 +49,206 @@ jobs:
           from tqdm import tqdm
           import numpy as np
           import edge_tts
+          from PIL import Image, ImageDraw, ImageFont
+
+          # حل مشكلة ANTIALIAS في الإصدارات الجديدة من Pillow لمكتبة MoviePy
+          import PIL.Image
+          if not hasattr(PIL.Image, 'ANTIALIAS'):
+              PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
           from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_audioclips
           import moviepy.video.fx.all as vfx
           from datetime import datetime
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
-          from PIL import Image, ImageDraw, ImageFont
 
           nest_asyncio.apply()
           urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
           warnings.filterwarnings("ignore", category=UserWarning)
           os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+          os.environ["SDL_VIDEODRIVER"] = "dummy"
 
           HISTORY_FILE = "shows_history.txt"
 
-          # إعدادات الأصوات
+          # إعدادات الأصوات المتعددة
           VOICE_RAWI = "ar-SA-HamedNeural"  # الراوي (سعودي فخم)
-          VOICE_MALE = "ar-EG-ShakirNeural" # ذكر (مصري واقعي)
-          VOICE_FEMALE = "ar-EG-SalmaNeural" # أنثى (مصري درامي)
+          VOICE_MALE = "ar-EG-ShakirNeural" # شخصية ذكر (مصري واقعي)
+          VOICE_FEMALE = "ar-EG-SalmaNeural" # شخصية أنثى (مصرية درامية)
 
           def get_data():
-              print("🔍 جاري جلب البيانات...", flush=True)
+              print("🔍 جاري جلب البيانات من المصدر...", flush=True)
               history_titles = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                       for line in f:
-                          if "|" in line: history_titles.append(line.split("|")[0].strip())
+                          if "|" in line:
+                              history_titles.append(line.split("|")[0].strip())
+
               base = "https://www.shorttv.live"
               try:
                   r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
                   soup = BeautifulSoup(r.text, 'html.parser')
                   links = soup.find_all('a', href=True)
                   random.shuffle(links)
+
                   for a in links:
                       img = a.find('img')
                       if not img: continue
                       title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
                       if len(title) < 5 or title in history_titles: continue
-                      s_page = requests.get(a['href'] if a['href'].startswith('http') else base + a['href'], verify=False, timeout=5)
+                      
+                      target_url = a['href'] if a['href'].startswith('http') else base + a['href']
+                      s_page = requests.get(target_url, verify=False, timeout=5)
                       s_soup = BeautifulSoup(s_page.text, 'html.parser')
                       meta = s_soup.find('meta', attrs={'name': 'description'})
-                      desc = meta.get('content', '') if meta else "قصة درامية"
+                      desc = meta.get('content', '') if meta else "قصة درامية مشوقة"
+                      
                       i_url = img.get('src') or img.get('data-src')
                       if i_url.startswith('//'): i_url = "https:" + i_url
+                      
                       with open("p.jpg", "wb") as f: f.write(requests.get(i_url).content)
+                      print(f"🎬 المسلسل المستهدف: {title}", flush=True)
                       return {"title": title, "desc": desc}
               except: return None
+              return None
 
-          def create_story(t, d):
-              print("🤖 جاري تأليف السيناريو الدرامي بصيغة الأصوات المتعددة...", flush=True)
-              prompt = (f"اكتب ملخصاً درامياً مشوقاً لمسلسل '{t}' بناءً على: {d}. "
-                        "يجب أن يكون السرد بنظام السيناريو باستخدام الوسوم التالية فقط: "
-                        "[RAWI] للجمل التي يلقيها الراوي. "
-                        "[MALE] للجمل التي تنطقها الشخصية الرجل. "
-                        "[FEMALE] للجمل التي تنطقها الشخصية الأنثى. "
-                        "ممنوع ذكر أسماء الشخصيات (مثل ياسين: أو ليلى:) داخل النص. "
-                        "ابدأ بالراوي لوصف المشهد، ثم اجعل الشخصيات تتفاعل بحوار درامي قوي، ثم انهِ بالراوي. "
-                        "اللغة: عربية فصحى درامية. النص لا يقل عن 300 كلمة.")
+          def create_story_scenario(t, d):
+              print("🤖 جاري تأليف السيناريو الدرامي بالأصوات المتعددة...", flush=True)
+              prompt = (f"اكتب ملخصاً درامياً لمسلسل بعنوان '{t}' بناءً على هذا الوصف: {d}. "
+                        "يجب أن يكون السرد بنظام السيناريو تماماً كالمثال التالي: "
+                        "[RAWI] خيم السكون على المكان... "
+                        "[MALE] لا يمكننا الاستمرار هكذا! "
+                        "[FEMALE] بل سنستمر، فالثمن قد دُفع بالفعل. "
+                        "قواعد صارمة: "
+                        "1. لا تذكر أسماء الشخصيات (مثل فلان:). استخدم فقط الوسوم [RAWI] أو [MALE] أو [FEMALE]. "
+                        "2. القصة يجب أن تكون من أحداث المسلسل الحقيقية. "
+                        "3. ابدأ بالراوي، واجعل الحوار بين الذكر والأنثى قوياً، واختم بالراوي. "
+                        "4. اللغة: عربية فصحى درامية سليمة. النص حوالي 300 كلمة.")
               try:
                   response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
                   return response.strip()
               except: return ""
 
-          async def generate_multivocals(script_text):
-              print("🎙️ جاري معالجة الأصوات المتعددة (راوي/ذكر/أنثى)...", flush=True)
+          async def generate_multivocal_audio(script_text):
+              print("🎙️ جاري توليد الأصوات المتعددة ودمجها...", flush=True)
+              # تقسيم النص بناءً على الوسوم
               segments = re.findall(r'\[(RAWI|MALE|FEMALE)\](.*?)(?=\[(?:RAWI|MALE|FEMALE)\]|$)', script_text, re.DOTALL)
-              clips = []
+              audio_clips = []
               
               for i, (role, text) in enumerate(segments):
                   text = text.strip()
                   if not text: continue
                   
-                  # تنظيف النص من أي علامات أو أسماء متبقية
-                  clean_text = re.sub(r'^[ا-ي]+[:]\s*', '', text)
-                  filename = f"seg_{i}.mp3"
+                  # تنظيف النص من أي مخلفات
+                  clean_segment = re.sub(r'^[ا-ي]+[:]\s*', '', text)
+                  temp_filename = f"seg_{i}.mp3"
                   
+                  # اختيار الصوت
                   voice = VOICE_RAWI if role == "RAWI" else (VOICE_MALE if role == "MALE" else VOICE_FEMALE)
                   
-                  communicate = edge_tts.Communicate(clean_text, voice)
-                  await communicate.save(filename)
-                  clips.append(AudioFileClip(filename))
-              
-              final_audio = concatenate_audioclips(clips)
-              final_audio.write_audiofile("v.mp3", fps=44100)
-              return "v.mp3"
+                  communicate = edge_tts.Communicate(clean_segment, voice, rate="+2%")
+                  await communicate.save(temp_filename)
+                  
+                  clip = AudioFileClip(temp_filename)
+                  audio_clips.append(clip)
+                  
+                  # إضافة وقفة تنفس (0.3 ثانية) بين المقاطع لمنع تداخل الكلام
+                  silence = AudioFileClip(temp_filename).volumex(0).set_duration(0.3)
+                  audio_clips.append(silence)
 
-          async def start_process():
+              if audio_clips:
+                  final_audio = concatenate_audioclips(audio_clips)
+                  final_audio.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                  return True
+              return False
+
+          async def start_production():
               data = get_data()
               if not data: return
               
-              script = create_story(data['title'], data['desc'])
-              if not script: return
+              scenario = create_story_scenario(data['title'], data['desc'])
+              if not scenario: return
               
-              await generate_multivocals(script)
-              
-              print("🎬 جاري المونتاج النهائي...", flush=True)
-              # المونتاج (لوجو، موجات، تأثير الثلج)
-              img = Image.new('RGBA', (400, 120), (0, 0, 0, 0))
-              draw = ImageDraw.Draw(img)
-              try: font = ImageFont.truetype("Roboto-Bold.ttf", 55)
-              except: font = ImageFont.load_default()
-              draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
-              draw.line((10, 80, 350, 80), fill=(255, 255, 255, 255), width=4)
-              img.save("logo.png")
+              success = await generate_multivocal_audio(scenario)
+              if not success: return
 
-              os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x120:colors=0x00FFFF:mode=cline,crop=400:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
-              
-              aud = AudioFileClip("v.mp3")
-              base_vid = ImageClip("p.jpg").resize(height=720).set_duration(aud.duration)
-              
-              logo_clip = ImageClip("logo.png").set_duration(aud.duration).set_position((30, 30))
-              waves_clip = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((30, 110)).set_opacity(0.8)
-              
-              final_vid = CompositeVideoClip([base_vid, logo_clip, waves_clip]).set_audio(aud)
-              final_vid.write_videofile("out.mp4", fps=15, codec="libx264", audio_codec="aac", verbose=False, logger=None)
-              
-              # الرفع ليوتيوب
-              if os.path.exists("out.mp4") and 'YOUTUBE_CREDENTIALS' in os.environ:
-                  print("📤 جاري الرفع...", flush=True)
-                  creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
-                  youtube = build('youtube', 'v3', credentials=creds)
-                  body = {
-                      'snippet': {'title': f"ملخص مسلسل {data['title']} | دراما مشوقة", 'description': data['desc'], 'categoryId': '24'},
-                      'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
-                  }
-                  media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
-                  youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
-                  with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(f"{data['title']}|{datetime.now()}\n")
+              print("🎬 جاري المونتاج النهائي وتصميم MegoDrama...", flush=True)
+              final_video_name = "out.mp4"
+              try:
+                  # 1. تصميم لوجو MegoDrama والخط
+                  img_logo = Image.new('RGBA', (500, 150), (0, 0, 0, 0))
+                  draw = ImageDraw.Draw(img_logo)
+                  try: font = ImageFont.truetype("Roboto-Bold.ttf", 60)
+                  except: font = ImageFont.load_default()
+                  
+                  # رسم الكلمة والخط
+                  draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
+                  draw.line((10, 95, 400, 95), fill=(255, 255, 255, 255), width=5)
+                  img_logo.save("logo.png")
 
-          asyncio.run(start_process())
+                  # 2. إنشاء موجات صوتية تنبض للأسفل
+                  # نستخدم ffmpeg لعمل موجات ونقص الجزء العلوي لتظهر كأنها تنبض للأسفل من الخط
+                  os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=500x140:colors=0x00FFFF:mode=cline,crop=500:70:0:70,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
+
+                  aud = AudioFileClip("v.mp3")
+                  base_vid = ImageClip("p.jpg").resize(height=720).set_duration(aud.duration)
+                  
+                  logo_clip = ImageClip("logo.png").set_duration(aud.duration).set_position((40, 40))
+                  
+                  if os.path.exists("temp_waves.mp4"):
+                      waves_clip = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5)
+                      # وضع الموجات تحت الخط مباشرة (الخط عند y=95 في الصورة، واللوجو يبدأ من 40، إذن الموجات عند 135)
+                      waves_clip = waves_clip.set_position((40, 135)).set_opacity(0.9).set_start(0)
+                      final_vid = CompositeVideoClip([base_vid, logo_clip, waves_clip]).set_audio(aud)
+                  else:
+                      final_vid = CompositeVideoClip([base_vid, logo_clip]).set_audio(aud)
+
+                  final_vid.write_videofile(final_video_name, fps=15, codec="libx264", audio_codec="aac", temp_audiofile='temp-audio.m4a', remove_temp=True, verbose=False, logger=None)
+                  aud.close()
+                  
+                  # الرفع إلى يوتيوب
+                  if 'YOUTUBE_CREDENTIALS' in os.environ:
+                      print("📤 جاري الرفع إلى قناتك على يوتيوب...", flush=True)
+                      creds_data = json.loads(os.environ['YOUTUBE_CREDENTIALS'])
+                      creds = Credentials.from_authorized_user_info(creds_data)
+                      youtube = build('youtube', 'v3', credentials=creds)
+                      
+                      body = {
+                          'snippet': {
+                              'title': f"ملخص مسلسل {data['title']} | دراما حصرية",
+                              'description': f"شاهد أقوى ملخص لمسلسل {data['title']}.\n\nتم الإنتاج بواسطة قناة MegoDrama.",
+                              'categoryId': '24'
+                          },
+                          'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                      }
+                      media = MediaFileUpload("out.mp4", chunksize=-1, resumable=True)
+                      request = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media)
+                      response = request.execute()
+                      print(f"✅ تم الرفع بنجاح! الرابط: https://youtu.be/{response['id']}")
+
+                      with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                          f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
+
+              except Exception as e:
+                  print(f"❌ خطأ في المونتاج أو الرفع: {e}", flush=True)
+
+          if __name__ == "__main__":
+              loop = asyncio.get_event_loop()
+              loop.run_until_complete(start_production())
           EOF
           python -u script.py
 
       - name: 💾 Commit History
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add shows_history.txt || true
-          git commit -m "📝 Update history" || true
+          git commit -m "Update history" || true
           git push || true
 
-      - name: ⏳ Auto-restart
+      - name: ⏳ Workflow Persistence
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
+        run: |
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
