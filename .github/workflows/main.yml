@@ -34,19 +34,17 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          # تسطيب مكتبة espeak-ng الضرورية جداً لعمل موديلات Piper بدون تهنيج
+          # تسطيب مكتبة espeak-ng الضرورية لعمل موديلات Piper
           sudo apt-get update -q
           sudo apt-get install -y espeak-ng -q
           
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
           echo "📥 جاري تحميل موديل الصوت العربي الواقعي (Sherpa-ONNX/VITS)..."
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-faris-low.tar.bz2 || true
-          
-          if [ -f "vits-piper-ar_JO-faris-low.tar.bz2" ]; then
-            tar xf vits-piper-ar_JO-faris-low.tar.bz2 || true
-            rm vits-piper-ar_JO-faris-low.tar.bz2 || true
-          fi
+          # تم تصحيح رابط التحميل لاسم الموديل الحقيقي (kareem-low)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
+          tar xf vits-piper-ar_JO-kareem-low.tar.bz2
+          rm vits-piper-ar_JO-kareem-low.tar.bz2
           
           cat << 'EOF' > script.py
           # ==========================================
@@ -131,20 +129,21 @@ jobs:
 
           async def make_audio(text):
               # إزالة أي حروف غير عربية، إزالة التشكيل تماماً، واستبدال الفواصل بنقاط لمنع تهنيج الموديل
-              clean_text = re.sub(r'[\u064B-\u065F]', '', text) # إزالة التشكيل
+              clean_text = re.sub(r'[\u064B-\u065F]', '', text)
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', '.', clean_text)
               
               print("🎙️ جاري إعداد موديل Sherpa-ONNX (VITS)...", flush=True)
               
-              if not os.path.exists("vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx"):
-                  raise Exception("❌ فشل: ملفات الموديل غير موجودة. تأكد من إتمام التحميل.")
+              # تم تصحيح المسارات لاسم الموديل kareem-low
+              if not os.path.exists("vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx"):
+                  raise Exception("❌ فشل: ملفات الموديل غير موجودة. الرابط أو التحميل فشل.")
 
               try:
                   tts_config = sherpa_onnx.OfflineTtsModelConfig(
                       vits=sherpa_onnx.OfflineVitsModelConfig(
-                          model="vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx",
-                          tokens="vits-piper-ar_JO-faris-low/tokens.txt",
-                          data_dir="vits-piper-ar_JO-faris-low/espeak-ng-data",
+                          model="vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx",
+                          tokens="vits-piper-ar_JO-kareem-low/tokens.txt",
+                          data_dir="vits-piper-ar_JO-kareem-low/espeak-ng-data",
                       ), num_threads=1
                   )
                   tts = sherpa_onnx.OfflineTts(tts_config)
@@ -157,7 +156,6 @@ jobs:
                   sample_rate = None
                   
                   for i, sentence in enumerate(sentences):
-                      # الـ flush=True هتخليك تشوف الجملة في الـ Logs فوراً لو السكربت وقف هنا
                       print(f"   -> توليد صوت للجملة {i+1}/{len(sentences)}...", flush=True) 
                       
                       audio = tts.generate(sentence)
