@@ -34,13 +34,15 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f edge-tts tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy sherpa-onnx scipy -q
           
           echo "📥 جاري تحميل موديل الصوت العربي الواقعي (Sherpa-ONNX/VITS)..."
-          if [ ! -d "vits-arabic-pavoque-low" ]; then
-            wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-arabic-pavoque-low.tar.bz2
-            tar xf vits-arabic-pavoque-low.tar.bz2
-            rm vits-arabic-pavoque-low.tar.bz2
+          # استخدام || true يمنع توقف الأكشن إذا فشل التحميل لأي سبب
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-faris-low.tar.bz2 || true
+          
+          if [ -f "vits-piper-ar_JO-faris-low.tar.bz2" ]; then
+            tar xf vits-piper-ar_JO-faris-low.tar.bz2 || true
+            rm vits-piper-ar_JO-faris-low.tar.bz2 || true
           fi
           
           cat << 'EOF' > script.py
@@ -50,7 +52,6 @@ jobs:
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
           import nest_asyncio
           import g4f
-          import edge_tts
           from bs4 import BeautifulSoup
           from tqdm import tqdm
           import numpy as np
@@ -127,63 +128,63 @@ jobs:
           async def make_audio(text):
               clean_text = re.sub(r'[^\u0600-\u06FF\s،.]', '', text)
               try:
-                  print("🎙️ جاري توليد الصوت باستخدام Sherpa-ONNX (VITS)...")
+                  print("🎙️ جاري توليد الصوت حصرياً باستخدام Sherpa-ONNX (VITS)...")
                   import scipy.io.wavfile as wav
                   import sherpa_onnx
                   
-                  # إعداد الموديل العربي المجاني
+                  # التأكد من وجود الموديل قبل التشغيل
+                  if not os.path.exists("vits-piper-ar_JO-faris-low"):
+                      raise Exception("ملفات الموديل غير موجودة. لن يتم استخدام أي بديل آخر.")
+
                   tts_config = sherpa_onnx.OfflineTtsModelConfig(
                       vits=sherpa_onnx.OfflineVitsModelConfig(
-                          model="vits-arabic-pavoque-low/pavoque_low.onnx",
-                          lexicon="vits-arabic-pavoque-low/lexicon.txt",
-                          tokens="vits-arabic-pavoque-low/tokens.txt",
+                          model="vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx",
+                          tokens="vits-piper-ar_JO-faris-low/tokens.txt",
+                          data_dir="vits-piper-ar_JO-faris-low/espeak-ng-data",
                       ), num_threads=2
                   )
                   tts = sherpa_onnx.OfflineTts(tts_config)
                   audio = tts.generate(clean_text)
                   
-                  # حفظ الملف كـ wav ثم تحويله لـ mp3 ليناسب باقي الكود
+                  # حفظ الملف كـ wav ثم تحويله لـ mp3
                   wav.write("v.wav", audio.sample_rate, audio.samples)
                   os.system("ffmpeg -i v.wav -codec:a libmp3lame -qscale:a 2 v.mp3 -y -loglevel quiet")
                   print("🎙️ ✅ تم توليد الصوت الاحترافي بنجاح عبر Sherpa-ONNX")
               
               except Exception as e:
-                  print(f"⚠️ تعذر استخدام Sherpa-ONNX ({e})، سيتم استخدام edge-tts كبديل لضمان استمرار العمل...")
-                  communicate = edge_tts.Communicate(clean_text, "ar-KW-NouraNeural", rate="+12%")
-                  await communicate.save("v.mp3")
+                  print(f"❌ فشل توليد الصوت عبر Sherpa-ONNX: {e}")
+                  raise Exception("تم إيقاف العملية لعدم وجود بديل للصوت بناء على طلبك.")
 
           def create_story(t, d):
               full_story = ""
               current_context = d
-              print(f"🔄 البدء في توليد الملحمة (Target: 2500 - 3000 words)...")
+              print(f"🔄 البدء في توليد الملحمة (Target: ~300 words for ~2 mins video)...")
               
               iteration = 1
-              max_iterations = 50 
+              max_iterations = 6 
               
-              while len(full_story.split()) < 2500 and iteration <= max_iterations:
+              while len(full_story.split()) < 250 and iteration <= max_iterations:
                   success = False
-                  for attempt in range(5):
+                  for attempt in range(3):
                       try:
                           if iteration == 1:
                               prompt = (f"ابدأ القصة بـ Hook تشويقي باللهجة العامية المصرية بأسلوب: 'في مسلسلنا اليوم.. {t}.. [موقف صادم أو تضحية].. وفي الآخر بيحصل [خيانة أو صدمة]!' "
                                         f"خليه أسلوب حكواتي بيشد اللي قدامه. "
-                                        f"بعد الـ Hook، ادخل فوراً في السرد الملحمي والمفصل جداً باللغة العربية الفصحى. "
+                                        f"بعد الـ Hook، ادخل فوراً في السرد الملحمي باللغة العربية الفصحى. "
                                         f"بناءً على الوصف: {current_context}. "
-                                        f"يجب أن تكون الفقرة طويلة جداً لا تقل عن 400 كلمة، ركز على أدق التفاصيل في المشهد، "
-                                        f"الألوان، الروائح، والمشاعر. اجعل النص مسترسلاً بدون أرقام أو رموز.")
+                                        f"يجب أن تكون الفقرة مسترسلة في حدود 150 كلمة، بدون أرقام أو رموز.")
                           else:
-                              prompt = (f"أكمل القصة السابقة بحدث درامي جديد ومفصل جداً. "
-                                        f"آخر ما حدث هو: {full_story[-800:]}. "
-                                        f"اكتب فقرة طويلة جداً لا تقل عن 400 كلمة. "
-                                        f"زد من تعقيد الأحداث وتعمق في الحوارات الداخلية للشخصيات. "
-                                        f"تذكر: فقرة واحدة مسترسلة، لغة عربية فصحى فقط بدون أرقام أو رموز.")
+                              prompt = (f"أكمل القصة السابقة بحدث درامي جديد. "
+                                        f"آخر ما حدث هو: {full_story[-100:]}. "
+                                        f"اكتب فقرة مسترسلة في حدود 150 كلمة. "
+                                        f"تذكر: لغة عربية فصحى فقط بدون أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
                               model=g4f.models.gpt_4,
                               messages=[{"role":"user", "content": prompt}]
                           )
                           
-                          if response and len(response) > 200:
+                          if response and len(response) > 50:
                               chunk = re.sub(r'[*#\-]', '', response).strip()
                               full_story += " " + chunk
                               success = True
@@ -198,17 +199,16 @@ jobs:
                           time.sleep(5)
                   
                   if not success:
-                      print(f"❌ تعذر استكمال الأجزاء التالية، سيتم الاكتفاء بما تم جمعه.")
+                      print(f"❌ تعذر استكمال الأجزاء، سيتم الاكتفاء بما تم جمعه.")
                       break
                       
                   iteration += 1
                   time.sleep(2) 
                   
-                  words = full_story.split()
-                  if len(words) >= 3000:
-                      full_story = " ".join(words[:3000])
-                      print(f"✂️ تم الوصول للحد الأقصى وتم ضبط القصة لتكون بحدود 3000 كلمة.")
-                      break
+              words = full_story.split()
+              if len(words) >= 350:
+                  full_story = " ".join(words[:350])
+                  print(f"✂️ تم الوصول للحد الأقصى للاختبار وتم ضبط القصة لتكون بحدود 350 كلمة (فيديو قصير).")
               
               return full_story.strip() if full_story else f""
 
@@ -224,7 +224,7 @@ jobs:
                   pbar.write(f"🎬 العنوان المستهدف: {t}")
                   pbar.update(1)
 
-                  pbar.set_description("🤖 تأليف الملحمة الطويلة")
+                  pbar.set_description("🤖 تأليف الملحمة القصيرة للاختبار")
                   ai_story = create_story(t, data['desc'])
                   fixed_intro = f""
                   final_story_text = fixed_intro + ai_story
@@ -239,6 +239,9 @@ jobs:
                   pbar.set_description("🎬 مونتاج الفيديو مع تأثير الثلج المتحرك")
                   final_video_name = "out.mp4"
                   try:
+                      if not os.path.exists("v.mp3"):
+                          raise Exception("ملف الصوت غير موجود، تم إيقاف المونتاج.")
+                      
                       aud = AudioFileClip("v.mp3")
                       base_vid = ImageClip("p.jpg").resize(height=720)
                       
@@ -289,7 +292,7 @@ jobs:
           # عملية إنتاج فيديو واحد فقط
           # ==========================================
           print("\n" + "="*60)
-          print("🔄 بدء الجلسة: سيتم إنتاج ورفع فيديو واحد فقط...")
+          print("🔄 بدء الجلسة: سيتم إنتاج ورفع فيديو واحد للاختبار...")
           print("="*60)
 
           loop = asyncio.get_event_loop()
@@ -302,9 +305,8 @@ jobs:
                   ai_story = result_data["story"]
                   
                   # === فترة انتظار عشوائية للتمويه من 1 إلى 5 دقائق قبل الرفع ===
-                  # تم تصحيح الخطأ البرمجي هنا لتجنب توقف بايثون
                   wait_time = random.randint(60, 300)
-                  print(f"\n⏳ تم إنتاج الفيديو. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية للتمويه قبل الرفع إلى اليوتيوب...")
+                  print(f"\n⏳ تم إنتاج الفيديو بنجاح. انتظار عشوائي لمدة {wait_time // 60} دقيقة و {wait_time % 60} ثانية للتمويه قبل الرفع إلى اليوتيوب...")
                   time.sleep(wait_time)
                   # ============================================
 
@@ -357,7 +359,7 @@ jobs:
                   except Exception as e:
                       print(f"❌ فشل يوتيوب: {e}")
               else:
-                  print("⚠️ لم يتم إنتاج فيديو في هذه الدورة. قد يكون بسبب تكرار المحتوى.")
+                  print("⚠️ لم يتم إنتاج فيديو في هذه الدورة.")
 
           except Exception as e:
               print(f"❌ حدث خطأ غير متوقع في الدورة: {e}")
