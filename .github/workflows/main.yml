@@ -42,9 +42,9 @@ jobs:
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           echo "📥 جاري تحميل موديل الصوت..."
-          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
-          tar xf vits-piper-ar_JO-kareem-low.tar.bz2
-          rm vits-piper-ar_JO-kareem-low.tar.bz2
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-faris-low.tar.bz2
+          tar xf vits-piper-ar_JO-faris-low.tar.bz2
+          rm vits-piper-ar_JO-faris-low.tar.bz2
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
@@ -56,6 +56,8 @@ jobs:
           import scipy.io.wavfile as wav
           import sherpa_onnx
 
+          import PIL
+          import PIL.Image
           from PIL import Image, ImageDraw, ImageFont
           if not hasattr(PIL.Image, 'ANTIALIAS'):
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
@@ -121,31 +123,28 @@ jobs:
 
           async def make_audio(text):
               clean_text = re.sub(r'[\u064B-\u065F]', '', text)
+              clean_text = clean_text.replace('،', '.').replace('؟', '.').replace('\n', '.')
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', ' ', clean_text)
-              
-              words = clean_text.split()
-              chunked_text = ""
-              for i in range(0, len(words), 5):
-                  chunked_text += " ".join(words[i:i+5]) + ". "
+              clean_text = re.sub(r'\.+', '.', clean_text)
               
               print("🎙️ جاري توليد الصوت...", flush=True)
-              if not os.path.exists("vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx"):
+              if not os.path.exists("vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx"):
                   raise Exception("ملفات الموديل غير موجودة.")
 
               try:
                   tts_config = sherpa_onnx.OfflineTtsConfig(
                       model=sherpa_onnx.OfflineTtsModelConfig(
                           vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                              model="vits-piper-ar_JO-kareem-low/ar_JO-kareem-low.onnx",
-                              tokens="vits-piper-ar_JO-kareem-low/tokens.txt",
-                              data_dir="vits-piper-ar_JO-kareem-low/espeak-ng-data",
+                              model="vits-piper-ar_JO-faris-low/ar_JO-faris-low.onnx",
+                              tokens="vits-piper-ar_JO-faris-low/tokens.txt",
+                              data_dir="vits-piper-ar_JO-faris-low/espeak-ng-data",
                           ),
                           num_threads=1
                       )
                   )
                   tts = sherpa_onnx.OfflineTts(tts_config)
                   
-                  sentences = [s.strip() for s in chunked_text.split('.') if len(s.strip()) > 2]
+                  sentences = [s.strip() for s in clean_text.split('.') if len(s.strip()) > 2]
                   all_samples = []
                   sample_rate = None
                   
@@ -155,7 +154,7 @@ jobs:
                           sample_rate = audio.sample_rate
                           
                       all_samples.extend(audio.samples)
-                      silence = np.zeros(int(sample_rate * 0.20), dtype=np.float32)
+                      silence = np.zeros(int(sample_rate * 0.25), dtype=np.float32)
                       all_samples.extend(silence)
                   
                   final_samples = np.array(all_samples, dtype=np.float32)
@@ -181,14 +180,14 @@ jobs:
                       try:
                           if iteration == 1:
                               prompt = (f"أنت معلق درامي محترف. اكتب بداية ملخص لمسلسل '{t}' بناءً على: {current_context}. "
-                                        f"**تنبيه صارم:** اكتب النص مباشرة دون أي كلمات مثل 'بالطبع' أو 'إليك الملخص'. "
-                                        f"**تنبيه صارم جداً:** استخدم هذا الأسلوب المرجعي تماماً في البناء والسرد: "
+                                        f"**تحذير صارم جداً:** اكتب النص مباشرة دون أي مقدمات، لا تقل 'بالطبع' أو 'إليك الملخص' أو أي كلمة من هذا القبيل. "
+                                        f"**قاعدة السرد:** استخدم هذا الأسلوب المرجعي تماماً في البناء: "
                                         f"«تبدأ الحكاية عند المدعو هنري فورد الثاني، وريث إمبراطورية فورد، الذي استيقظ يوماً ليجد المبيعات في حالة ركود، فقرر القيام بحركة استعراضية ليغيظ بها الإيطاليين... ومن هنا بدأت المعمعة.» "
                                         f"اكتب فقرة واحدة مسترسلة (150 كلمة)، بلغة عربية فصحى دقيقة إملائياً، بدون أرقام أو رموز.")
                           else:
                               prompt = (f"أكمل القصة السابقة بحدث درامي. "
                                         f"آخر ما حدث هو: {full_story[-100:]}. "
-                                        f"**تنبيه صارم:** لا تكتب أي مقدمات أو ردود أو مجاملات. ابدأ بالقصة فوراً. "
+                                        f"**تحذير صارم جداً:** لا تكتب أي مقدمات أو ردود أو مجاملات. ابدأ بالقصة فوراً. "
                                         f"اكتب فقرة مسترسلة (150 كلمة). حافظ على أسلوب السرد المرجعي القوي، لغة فصحى خالية من الأخطاء، وبدون أرقام أو رموز.")
 
                           response = g4f.ChatCompletion.create(
@@ -198,8 +197,8 @@ jobs:
                           
                           if response and len(response) > 50:
                               chunk = re.sub(r'[*#\-]', '', response).strip()
-                              chunk = re.sub(r'^(بالطبع|إليك|حسناً|إليك الملخص|بكل سرور|مقدمة|قصة|الملخص|وفق طلبك|إليك القصة)[\s:،.-]*', '', chunk).strip()
-                              chunk = re.sub(r'^(بالتأكيد|ها هو)[\s:،.-]*', '', chunk).strip()
+                              chunk = re.sub(r'^(بالطبع|إليك|حسناً|إليك الملخص|بكل سرور|مقدمة|قصة|الملخص|وفق طلبك|إليك القصة|تبدأ القصة|بناءً على)[\s:،.-]*', '', chunk).strip()
+                              chunk = re.sub(r'^(بالتأكيد|ها هو|هنا تكملة)[\s:،.-]*', '', chunk).strip()
                               
                               full_story += " " + chunk
                               success = True
@@ -236,18 +235,20 @@ jobs:
                   if not os.path.exists("v.mp3"):
                       return None
                   
-                  img = Image.new('RGBA', (400, 100), (0, 0, 0, 0))
+                  # تصميم لوجو MegoDrama والخط
+                  img = PIL.Image.new('RGBA', (400, 120), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try:
-                      font = ImageFont.truetype("Roboto-Bold.ttf", 60)
+                      font = ImageFont.truetype("Roboto-Bold.ttf", 55)
                   except:
                       font = ImageFont.load_default()
                   
                   draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
-                  draw.line((10, 85, 360, 85), fill=(255, 255, 255, 255), width=4)
+                  draw.line((10, 80, 350, 80), fill=(255, 255, 255, 255), width=4)
                   img.save("logo.png")
 
-                  os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x100:colors=0x00FFFF:mode=cline,crop=400:50:0:50,format=yuv420p[v]" -map "[v]" -map 0:a -c:v libx264 -c:a copy -t $(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 v.mp3) temp_waves.mp4 -y -loglevel quiet')
+                  # تصميم الموجات الصوتية بخلفية سوداء لعمل قناع لها لاحقاً (النبض لأسفل)
+                  os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x120:colors=0x00FFFF:mode=cline,crop=400:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
                   aud = AudioFileClip("v.mp3")
                   base_vid = ImageClip("p.jpg").resize(height=720)
@@ -275,12 +276,14 @@ jobs:
                   clips_to_composite = [snow_vid]
                   
                   if os.path.exists("logo.png"):
+                      # وضع اللوجو أعلى اليسار
                       logo_clip = ImageClip("logo.png").set_duration(aud.duration).set_position((30, 30))
                       clips_to_composite.append(logo_clip)
                       
                   if os.path.exists("temp_waves.mp4"):
+                      # وضع الموجات تحت الخط مباشرة، وجعل الخلفية السوداء شفافة
                       waves_clip = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5)
-                      waves_clip = waves_clip.set_position((30, 30 + 85)).set_opacity(0.85).set_start(0)
+                      waves_clip = waves_clip.set_position((30, 110)).set_opacity(0.85).set_start(0)
                       clips_to_composite.append(waves_clip)
 
                   final_vid = CompositeVideoClip(clips_to_composite).set_audio(aud)
