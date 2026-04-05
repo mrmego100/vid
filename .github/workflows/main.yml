@@ -71,9 +71,9 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # إعدادات الأصوات المتعددة
-          VOICE_RAWI = "ar-SA-HamedNeural" 
+          VOICE_RAWI = "ar-SA-NaayfNeural" 
           VOICE_MALE = "ar-EG-ShakirNeural"
-          VOICE_FEMALE = "ar-EG-SalmaNeural"
+          VOICE_FEMALE = "ar-AE-HamdanNeural"
 
           def get_data():
               print("🔍 جاري جلب البيانات من المصدر...", flush=True)
