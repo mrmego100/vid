@@ -41,10 +41,28 @@ jobs:
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
-          echo "📥 جاري تحميل موديل الصوت..."
-          wget -q https://huggingface.co/rhasspy/piper-voices/resolve/main/ar/ar_JO/faris/low/ar_JO-faris-low.tar.bz2
-          tar xf ar_JO-faris-low.tar.bz2
-          rm ar_JO-faris-low.tar.bz2
+          echo "📥 جاري تحميل 5 موديلات صوتية (Sherpa-ONNX)..."
+          # 1. صوت فارس (أردني)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-faris-low.tar.bz2
+          tar xf vits-piper-ar_JO-faris-low.tar.bz2
+          
+          # 2. صوت كريم (أردني)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2
+          tar xf vits-piper-ar_JO-kareem-low.tar.bz2
+          
+          # 3. صوت حسين (إماراتي)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_AE-hussein-low.tar.bz2
+          tar xf vits-piper-ar_AE-hussein-low.tar.bz2
+          
+          # 4. صوت فاطمة (إماراتي نسائي)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_AE-fatima-low.tar.bz2
+          tar xf vits-piper-ar_AE-fatima-low.tar.bz2
+          
+          # 5. صوت أميري (قطري)
+          wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_QA-amiri-low.tar.bz2
+          tar xf vits-piper-ar_QA-amiri-low.tar.bz2
+          
+          rm *.tar.bz2
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
@@ -76,6 +94,22 @@ jobs:
           os.environ["SDL_VIDEODRIVER"] = "dummy"
 
           HISTORY_FILE = "shows_history.txt"
+
+          # =========================================================================================
+          # 🎛️ إعدادات المعلق الصوتي
+          # قم بتغيير الرقم من 1 إلى 5 لاختيار الصوت المناسب
+          # 1: فارس (أردني عميق) | 2: كريم (أردني هادئ) | 3: حسين (إماراتي) | 4: فاطمة (نسائي) | 5: أميري (قطري)
+          # =========================================================================================
+          VOICE_ID = 1
+
+          VOICES_MAP = {
+              1: ("vits-piper-ar_JO-faris-low", "ar_JO-faris-low"),
+              2: ("vits-piper-ar_JO-kareem-low", "ar_JO-kareem-low"),
+              3: ("vits-piper-ar_AE-hussein-low", "ar_AE-hussein-low"),
+              4: ("vits-piper-ar_AE-fatima-low", "ar_AE-fatima-low"),
+              5: ("vits-piper-ar_QA-amiri-low", "ar_QA-amiri-low")
+          }
+          # =========================================================================================
 
           def get_data():
               print("🔍 جاري جلب البيانات...", flush=True)
@@ -127,17 +161,22 @@ jobs:
               clean_text = re.sub(r'[^\u0600-\u06FF\s.]', ' ', clean_text)
               clean_text = re.sub(r'\.+', '.', clean_text)
               
-              print("🎙️ جاري توليد الصوت...", flush=True)
-              if not os.path.exists("ar_JO-faris-low/ar_JO-faris-low.onnx"):
-                  raise Exception("ملفات الموديل غير موجودة.")
+              folder_name, model_name = VOICES_MAP.get(VOICE_ID, VOICES_MAP[1])
+              model_path = f"{folder_name}/{model_name}.onnx"
+              tokens_path = f"{folder_name}/tokens.txt"
+              data_dir = f"{folder_name}/espeak-ng-data"
+              
+              print(f"🎙️ جاري توليد الصوت باستخدام الموديل: {model_name}...", flush=True)
+              if not os.path.exists(model_path):
+                  raise Exception(f"ملف الموديل غير موجود: {model_path}")
 
               try:
                   tts_config = sherpa_onnx.OfflineTtsConfig(
                       model=sherpa_onnx.OfflineTtsModelConfig(
                           vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                              model="ar_JO-faris-low/ar_JO-faris-low.onnx",
-                              tokens="ar_JO-faris-low/tokens.txt",
-                              data_dir="ar_JO-faris-low/espeak-ng-data",
+                              model=model_path,
+                              tokens=tokens_path,
+                              data_dir=data_dir,
                           ),
                           num_threads=1
                       )
