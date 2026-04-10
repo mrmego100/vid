@@ -37,9 +37,13 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg xvfb chromium-browser -q
           
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts -q
+          # إضافة حلقة تكرار (Retry Loop) لتجاوز أخطاء اتصال SSL المؤقتة أثناء تثبيت الحزم
+          for i in {1..5}; do
+            pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts -q && break || sleep 5
+          done
           
-          wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
+          # إضافة محاولات متكررة لتحميل الخط
+          wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
@@ -212,7 +216,6 @@ jobs:
                         "ممنوع استخدام أي رموز أو نجوم أو أسماء شخصيات مسبوقة بنقطتين.")
               try:
                   response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                  # الإصلاح هنا: استخدام التعبير المنطقي الآمن لمنع خطأ bad character range
                   clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
                   print(f"   -> تم توليد السيناريو السردي بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
                   return clean_chunk
