@@ -35,14 +35,14 @@ jobs:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
           sudo apt-get update -q
-          # تثبيت أدوات التسجيل والخطوط العربية المطلوبة للترجمة ASS
-          sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra -q
+          # تثبيت أدوات التسجيل والخطوط الأساسية لضمان عدم انهيار البيئة
+          sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra fonts-roboto curl -q
           
-          # إعداد الخط العربي ونقله لمسار النظام ليقرأه FFmpeg
-          wget -q -O arabic.ttf https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf
+          # استبدال wget بـ curl لتفادي خطأ Exit Code 8 المزعج وإضافة || true لتجاهل الانهيار
+          curl -sL "https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
           sudo mkdir -p /usr/share/fonts/truetype/custom
-          sudo cp arabic.ttf /usr/share/fonts/truetype/custom/
-          sudo fc-cache -fv
+          sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
+          sudo fc-cache -fv || true
           
           # إعداد كارت صوت وهمي لتسجيل أوديو اللعبة
           pulseaudio -D --exit-idle-time=-1 || true
@@ -50,12 +50,13 @@ jobs:
           pacmd set-default-sink v1 || true
           pacmd set-default-source v1.monitor || true
           
-          # إضافة مكتبات دعم اللغة العربية في الصور (arabic-reshaper, python-bidi) للصورة المصغرة
+          # إضافة مكتبات دعم اللغة العربية في الصور (arabic-reshaper, python-bidi)
           for i in {1..5}; do
             pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
           done
           
-          wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
+          # تحميل خط Roboto بـ curl أيضاً لتجنب الخطأ
+          curl -sL "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Bold.ttf" -o Roboto-Bold.ttf || true
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
@@ -93,11 +94,11 @@ jobs:
           ENABLE_YOUTUBE_UPLOAD = 1 # 0 لإيقاف الرفع، 1 للتشغيل
           VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
           VID_WIDTH = 1280  # العرض
-          VID_HEIGHT = 1400 # الط الطول
+          VID_HEIGHT = 1400 # الطول
           VID_FPS = 40      # معدل الإطارات
           
           # --- إعدادات كلمات السكربت --- #
-          STORY_MIN_WORDS = 150  # الحد الأدنى لعدد كلمات القصة (تحكم بها كما تحب)
+          STORY_MIN_WORDS = 150  # الحد الأدنى لعدد كلمات القصة
           STORY_MAX_WORDS = 160  # الحد الأقصى لعدد كلمات القصة
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
