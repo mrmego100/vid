@@ -38,8 +38,8 @@ jobs:
           # تثبيت أدوات التسجيل والخطوط
           sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra curl -q
           
-          # إعداد الخط العربي كما طلبت بالضبط (بناءً على السكربت المرجعي المضمون)
-          wget -q -O arabic.ttf https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf
+          # إعداد الخط العربي كما طلبت بالضبط (مُحدث للرابط المضمون)
+          curl -sL "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
           sudo mkdir -p /usr/share/fonts/truetype/custom
           sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
           sudo fc-cache -fv || true
@@ -98,8 +98,8 @@ jobs:
           VID_FPS = 60      # معدل الإطارات
           
           # --- إعدادات كلمات السكربت --- #
-          STORY_MIN_WORDS = 500  # الحد الأدنى لعدد كلمات القصة
-          STORY_MAX_WORDS = 600  # الحد الأقصى لعدد كلمات القصة
+          STORY_MIN_WORDS = 2000  # الحد الأدنى لعدد كلمات القصة
+          STORY_MAX_WORDS = 2500  # الحد الأقصى لعدد كلمات القصة
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
@@ -261,7 +261,7 @@ jobs:
                   except Exception as e: 
                       print(f"❌ خطأ في الاتصال بالذكاء الاصطناعي (المحاولة {attempt + 1}): {e}", flush=True)
                   
-                  time.sleep(7) 
+                  time.sleep(7)
               
               return ""
 
@@ -311,15 +311,26 @@ jobs:
               desc_fallback += "تابع القصة كاملة هنا. مسلسل رائع مدبلج وتستطيع مشاهدته مترجم بأفضل جودة."
               return desc_fallback
 
-          # ----- تصميم الصورة المصغرة (بوستر مموه + عنوان عربي ضخم) -----
+          # ----- تصميم الصورة المصغرة (تم حل مشكلة المربعات والخط الصغير هنا) -----
           def create_youtube_thumbnail(title_text):
-              print("🖼️ جاري تصميم الصورة المصغرة (بوستر مُموه + عنوان ضخم)...", flush=True)
+              print("🖼️ جاري تصميم الصورة المصغرة (بوستر مُموه + عنوان ضخم مع إيموجي)...", flush=True)
+              
+              # حل جذري لمشكلة الخط المربعات: تحميل الخط برمجياً والتأكد من وجوده
+              font_path = "NotoNaskhArabic-Bold.ttf"
+              if not os.path.exists(font_path):
+                  print("⬇️ جاري تحميل الخط العربي للصورة المصغرة...", flush=True)
+                  font_url = "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf"
+                  try:
+                      with open(font_path, "wb") as f:
+                          f.write(requests.get(font_url, verify=False).content)
+                  except Exception as e:
+                      print(f"⚠️ فشل تحميل الخط: {e}", flush=True)
+
               try:
                   width, height = 1280, 720
                   if os.path.exists("p.jpg"):
                       try:
                           img = Image.open("p.jpg").convert('RGB')
-                          # قص وتكبير البوستر لعمل زووم على المنتصف (Crop 60% Width)
                           w, h = img.size
                           zoom_w = int(w * 0.6)
                           zoom_h = int(zoom_w / (width / height))
@@ -329,82 +340,60 @@ jobs:
                           bottom = (h + zoom_h) / 2
                           img = img.crop((left, top, right, bottom))
                           img = img.resize((width, height), resample=PIL.Image.LANCZOS)
-                          
-                          # تطبيق التمويه القوي على البوستر (Blur)
                           img = img.filter(ImageFilter.GaussianBlur(radius=25))
                       except:
                           img = Image.new('RGB', (width, height), color=(15, 15, 25))
                   else:
-                      # خلفية أساسية غامقة في حال عدم وجود بوستر
                       img = Image.new('RGB', (width, height), color=(15, 15, 25))
 
-                  # إضافة إضاءة خلفية للنص (Overlay غامق قليلاً)
                   overlay = Image.new('RGBA', (width, height), (0, 0, 0, 60))
                   img.paste(overlay, (0, 0), overlay)
                   draw = ImageDraw.Draw(img)
 
-                  # ضمان وجود الخط العربي وحل مشكلة المربعات والخط الصغير
-                  font_path = "arabic.ttf"
-                  if not os.path.exists(font_path):
-                      import urllib.request
-                      urllib.request.urlretrieve("https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf", font_path)
-
+                  emojis = [" 🍿", " 🔥", " 😱", " 🎬", " ✨", " 🌟"]
+                  emoji = random.choice(emojis)
+                  
+                  # معالجة النص العربي ليظهر مشبكاً ومن اليمين لليسار مع الإيموجي
+                  reshaped_text = arabic_reshaper.reshape(title_text + emoji)
+                  bidi_text = get_display(reshaped_text)
+                  
                   try:
-                      # استخدام الخط النستعليق العريض الضخم
-                      font = ImageFont.truetype(font_path, 95)
-                  except:
-                      print("⚠️ تحذير: الاعتماد على الخط الافتراضي للصورة المصغرة.")
+                      # استخدام الخط بعد ضمان تحميله بحجم كبير جداً ليكون واضح
+                      font = ImageFont.truetype(font_path, 110)
+                  except Exception as e:
+                      print(f"⚠️ تحذير: فشل تحميل الخط، سيتم استخدام الافتراضي. السبب: {e}")
                       font = ImageFont.load_default()
-
-                  # دالة لتقسيم النص العربي بشكل سليم لتجنب مشكلة انعكاس الكلمات
-                  def wrap_text_arabic(text, font_obj, max_width):
+                  
+                  def wrap_text(text, font, max_width):
                       lines = []
                       words = text.split()
-                      line = ''
-                      for word in words:
-                          test_line = line + ' ' + word if line else word
-                          test_bidi = get_display(arabic_reshaper.reshape(test_line))
-                          if font_obj.getlength(test_bidi) <= max_width:
-                              line = test_line
-                          else:
-                              lines.append(line)
-                              line = word
-                      if line:
-                          lines.append(line)
+                      while words:
+                          line = ''
+                          while words and font.getlength(line + words[0] + ' ') <= max_width:
+                              line += (words.pop(0) + ' ')
+                          lines.append(line.strip())
                       return lines
-
-                  # إزالة الإيموجيات المسببة لظهور المربعات في النص (لأن الخط لا يدعمها)
-                  clean_title = title_text
-                  for em in [" 🍿", " 🔥", " 😱", " 🎬", " ✨", " 🌟", "🍿", "🔥", "😱", "🎬", "✨", "🌟"]:
-                      clean_title = clean_title.replace(em, "")
-
-                  # ترك هوامش
-                  lines = wrap_text_arabic(clean_title, font, width - 400)
                   
-                  # رسم النص في المنتصف بلمسة احترافية
-                  line_height = 120 # المسافة بين الأسطر
+                  lines = wrap_text(bidi_text, font, width - 200) # تقليل الهوامش لتوسيع مساحة النص
+                  
+                  line_height = 140 # مسافة مناسبة للحجم الجديد
                   total_height = len(lines) * line_height
                   y_text = (height - total_height) / 2
                   
                   for line in lines:
-                      # معالجة النص العربي ليظهر مشبكاً ومن اليمين لليسار لكل سطر بمفرده
-                      bidi_line = get_display(arabic_reshaper.reshape(line))
-                      
-                      # قياس عرض السطر لتوسيطه
-                      text_width = font.getlength(bidi_line)
+                      text_width = font.getlength(line)
                       x_text = (width - text_width) / 2
                       
-                      # رسم ظل أسود كثيف وعريض للنص لإبرازه (Outer Glow effect)
-                      for offset in range(3, 10):
-                          draw.text((x_text+offset, y_text+offset), bidi_line, font=font, fill=(0,0,0, 150))
-                          draw.text((x_text-offset, y_text-offset), bidi_line, font=font, fill=(0,0,0, 150))
-                          draw.text((x_text+offset, y_text-offset), bidi_line, font=font, fill=(0,0,0, 150))
-                          draw.text((x_text-offset, y_text+offset), bidi_line, font=font, fill=(0,0,0, 150))
+                      # رسم ظل أسود كثيف وعريض للنص لإبرازه
+                      for offset in range(3, 10): 
+                          draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
+                          draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
                       
                       # رسم النص الأصلي بلون أبيض ناصع
-                      draw.text((x_text, y_text), bidi_line, font=font, fill=(255, 255, 255))
+                      draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
                       
-                      # الانتقال للسطر التالي
                       y_text += line_height
                       
                   img.save("thumbnail.jpg")
@@ -414,7 +403,7 @@ jobs:
                   Image.new('RGB', (1280, 720), color="black").save("thumbnail.jpg")
                   return "thumbnail.jpg"
 
-          # ----- نظام الترجمة المستقل تماماً (بناءً على طلبك وبالخط والستايل المطلوب بالضبط) -----
+          # ----- نظام الترجمة المستقل تماماً -----
           async def process_audio_and_subs(script):
               if not script: return False
               print("🎙️ معالجة الصوت وبناء ملف الترجمة ASS يدوياً...", flush=True)
@@ -422,7 +411,6 @@ jobs:
                   communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="+4%")
                   word_boundaries = []
                   
-                  # توليد الصوت وتجميعWordBoundaries للتوقيت الدقيق
                   with open("v.mp3", "wb") as file:
                       async for chunk in communicate.stream():
                           if chunk["type"] == "audio":
@@ -430,7 +418,6 @@ jobs:
                           elif chunk["type"] == "WordBoundary":
                               word_boundaries.append(chunk)
                   
-                  # إعداد رأس ملف الـ ASS بالستايل المطلوب والخطNoto Naskh Arabic
                   ass_header = """[Script Info]
           ScriptType: v4.00+
 
@@ -449,19 +436,14 @@ jobs:
                       s = seconds % 60
                       return f"{h}:{m:02d}:{s:05.2f}"
 
-                  # تجميع الكلمات لعمل سطور (كل 6 كلمات في سطر) لترجمة مريحة
                   words_per_line = 6
                   for i in range(0, len(word_boundaries), words_per_line):
                       group = word_boundaries[i:i+words_per_line]
-                      # حساب وقت البداية والنهاية للسطر
                       start_time = group[0]["offset"] / 10000000
                       end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
-                      # تجميع الكلمات وتنظيفها
                       text = " ".join([w["text"] for w in group])
-                      # إضافة سطر الترجمة لملفASS
                       ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{text}")
 
-                  # حفظ ملف الترجمةASS
                   with open("subs.ass", "w", encoding="utf-8") as f:
                       f.write(ass_header + "\n".join(ass_lines))
                       
@@ -471,25 +453,21 @@ jobs:
                   return False
 
           async def start_production():
-              # جلب بيانات المسلسل
               data = get_data()
               if not data: 
                   print("⚠️ لم يتم العثور على أي مسلسل جديد.")
                   return
               
-              # تأليف القصة بالذكاء الاصطناعي بنظام الموثوقية
               script = create_narrative_script(data['title'], data['desc'])
               if len(script.split()) < 10: 
                   print("⚠️ السيناريو قصير جداً، تم إلغاء العملية.")
                   return
               
-              # توليد الصوت والترجمةASS
               if await process_audio_and_subs(script):
                   print("🎬 بدء المونتاج السينمائي ودمج الأصوات وحرق الترجمة...", flush=True)
                   
                   aud = AudioFileClip("v.mp3")
                   
-                  # إنشاء واجهة الرسوميات Overlay (اخلاء المسئولية)
                   img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
@@ -498,13 +476,10 @@ jobs:
                   draw.text((40, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
 
-                  # تصميم الموجات الصوتية بشكل حلو ومتعدد الألوان ومتحرك باستمرار
                   os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
-                  # تسجيل خلفية اللعبة
                   bg_vid_file = record_live_game(aud.duration)
                   
-                  # دمج الفيديو والخلفية
                   if bg_vid_file:
                       base = VideoFileClip(bg_vid_file).resize(height=VID_HEIGHT)
                       if base.w > VID_WIDTH:
@@ -515,7 +490,6 @@ jobs:
                       else:
                           base = base.subclip(0, aud.duration)
                           
-                      # دمج صوت اللعبة مع التعليق (التعليق 100% واللعبة 10%)
                       if base.audio is not None:
                           game_audio = base.audio.fx(afx.volumex, 0.1)
                           final_audio = CompositeAudioClip([game_audio.set_duration(aud.duration), aud])
@@ -523,7 +497,6 @@ jobs:
                       else:
                           base = base.set_audio(aud)
                   else:
-                      # خلفية احتياطية من البوستر في حال فشل تسجيل اللعبة
                       base = ImageClip("p.jpg").resize(height=VID_HEIGHT).set_duration(aud.duration)
                       if base.w > VID_WIDTH:
                           base = base.crop(x_center=base.w/2, width=VID_WIDTH)
@@ -531,42 +504,35 @@ jobs:
 
                   overlay = ImageClip("overlay.png").set_duration(aud.duration)
                   
-                  # دمج الموجات الصوتية والواجهة
                   if os.path.exists("temp_waves.mp4"):
-                      # إزالة الصوت من الموجات لتجنب تكرار صوت التعليق، ووضعها في أعلى اليمين
                       waves = VideoFileClip("temp_waves.mp4").without_audio().fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((VID_WIDTH - 430, 40)).set_opacity(0.9)
                       final_vid = CompositeVideoClip([base, overlay, waves])
                   else:
                       final_vid = CompositeVideoClip([base, overlay])
                       
-                  final_vid = final_vid.set_audio(base.audio) # التأكيد النهائي على دمج الصوت الصحيح
+                  final_vid = final_vid.set_audio(base.audio)
                   final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
                   aud.close()
                   base.close()
                   overlay.close()
                   
-                  # دمج ملف الترجمة ASS في الفيديو النهائي باستخدام إعداداتك والخط المطلوب بالضبط
                   print("✍️ جاري حرق الترجمة العربيةNoto Naskh Arabic (ASS) على الفيديو...", flush=True)
                   os.system('ffmpeg -y -i temp_out.mp4 -vf "ass=subs.ass" -c:a copy out.mp4 -loglevel quiet')
                   
-                  # التحقق من نجاح حرق الترجمة
                   if not os.path.exists("out.mp4"):
                       os.rename("temp_out.mp4", "out.mp4")
 
                   if os.path.exists("out.mp4"):
-                      # التحكم في رفع الفيديو لـ Catbox
                       if ENABLE_CATBOX_UPLOAD == 1:
                           upload_to_catbox("out.mp4")
                       else:
                           print("⏸️ تم إيقاف الرفع لـ Catbox بناءً على الإعدادات.")
                       
-                      # توليد بيانات يوتيوب وتصميم الصورة المصغرة الجديدة
                       yt_title = generate_youtube_title(data['title'], script)
                       yt_desc = generate_youtube_desc(data['title'], script)
                       thumb_path = create_youtube_thumbnail(yt_title)
 
-                      # الرفع ليوتيوب
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
                           print(f"📤 جاري الرفع إلى يوتيوب بعنوان مشوق وضخم:\n{yt_title}", flush=True)
                           try:
@@ -583,7 +549,6 @@ jobs:
                               req = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True))
                               res = req.execute()
                               
-                              # رفع الصورة المصغرة الاحترافية الجديدة
                               if os.path.exists(thumb_path):
                                   print("🖼️ رفع الصورة المصغرة الاحترافية الجديدة...", flush=True)
                                   youtube.thumbnails().set(videoId=res['id'], media_body=MediaFileUpload(thumb_path)).execute()
@@ -594,13 +559,11 @@ jobs:
                       else:
                           print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على الإعدادات.")
 
-                      # تسجيل في السجل
                       with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                           f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
 
           if __name__ == "__main__":
               asyncio.run(start_production())
-              # بقاء الجلسة نشطة
               print("⏱️ الجلسة مستمرة لمدة 4 ساعات...")
               time.sleep(4 * 60 * 60)
           EOF
