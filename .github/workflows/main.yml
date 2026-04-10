@@ -38,8 +38,8 @@ jobs:
           # تثبيت أدوات التسجيل والخطوط
           sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra curl -q
           
-          # إعداد الخط العربي كما طلبت بالضبط
-          curl -sL "https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
+          # إعداد الخط العربي كما طلبت بالضبط (بناءً على السكربت المرجعي المضمون)
+          wget -q -O arabic.ttf https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf
           sudo mkdir -p /usr/share/fonts/truetype/custom
           sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
           sudo fc-cache -fv || true
@@ -98,8 +98,8 @@ jobs:
           VID_FPS = 60      # معدل الإطارات
           
           # --- إعدادات كلمات السكربت --- #
-          STORY_MIN_WORDS = 2000  # الحد الأدنى لعدد كلمات القصة
-          STORY_MAX_WORDS = 2500  # الحد الأقصى لعدد كلمات القصة
+          STORY_MIN_WORDS = 500  # الحد الأدنى لعدد كلمات القصة
+          STORY_MAX_WORDS = 600  # الحد الأقصى لعدد كلمات القصة
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
@@ -244,16 +244,14 @@ jobs:
                         "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
                         "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
               
-              # حل المشكلة: الاعتماد على النصوص لتعريف الموديلات
               models_to_try = ["gpt-4", "gpt-3.5-turbo"]
               
-              for attempt in range(5): # 5 محاولات لضمان النجاح
+              for attempt in range(5):
                   model = models_to_try[attempt % len(models_to_try)]
                   try:
                       print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو...", flush=True)
                       response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
                       
-                      # التحقق من أن الرد يحتوي على نص ومكتمل بشكل معقول
                       if response and len(response.split()) > 150: 
                           clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
                           print(f"   -> ✅ تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
@@ -263,7 +261,7 @@ jobs:
                   except Exception as e: 
                       print(f"❌ خطأ في الاتصال بالذكاء الاصطناعي (المحاولة {attempt + 1}): {e}", flush=True)
                   
-                  time.sleep(7) # راحة للسيرفر قبل المحاولة التالية
+                  time.sleep(7) 
               
               return ""
 
@@ -313,9 +311,9 @@ jobs:
               desc_fallback += "تابع القصة كاملة هنا. مسلسل رائع مدبلج وتستطيع مشاهدته مترجم بأفضل جودة."
               return desc_fallback
 
-          # ----- تصميم الصورة المصغرة (بوستر مموه + عنوان عربي ضخم مع إيموجي) -----
+          # ----- تصميم الصورة المصغرة (بوستر مموه + عنوان عربي ضخم) -----
           def create_youtube_thumbnail(title_text):
-              print("🖼️ جاري تصميم الصورة المصغرة (بوستر مُموه + عنوان ضخم مع إيموجي)...", flush=True)
+              print("🖼️ جاري تصميم الصورة المصغرة (بوستر مُموه + عنوان ضخم)...", flush=True)
               try:
                   width, height = 1280, 720
                   if os.path.exists("p.jpg"):
@@ -345,54 +343,66 @@ jobs:
                   img.paste(overlay, (0, 0), overlay)
                   draw = ImageDraw.Draw(img)
 
-                  # تجهيز النص العربي والخط
-                  # إضافة إيموجي عشوائي مناسب للإثارة
-                  emojis = [" 🍿", " 🔥", " 😱", " 🎬", " ✨", " 🌟"]
-                  emoji = random.choice(emojis)
-                  
-                  # معالجة النص العربي ليظهر مشبكاً ومن اليمين لليسار مع الإيموجي
-                  reshaped_text = arabic_reshaper.reshape(title_text + emoji)
-                  bidi_text = get_display(reshaped_text)
-                  
+                  # ضمان وجود الخط العربي وحل مشكلة المربعات والخط الصغير
+                  font_path = "arabic.ttf"
+                  if not os.path.exists(font_path):
+                      import urllib.request
+                      urllib.request.urlretrieve("https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf", font_path)
+
                   try:
                       # استخدام الخط النستعليق العريض الضخم
-                      font = ImageFont.truetype("arabic.ttf", 95)
+                      font = ImageFont.truetype(font_path, 95)
                   except:
+                      print("⚠️ تحذير: الاعتماد على الخط الافتراضي للصورة المصغرة.")
                       font = ImageFont.load_default()
-                  
-                  # تقسيم النص لأسطر بشكل ذكي (Wrapped Text)
-                  def wrap_text(text, font, max_width):
+
+                  # دالة لتقسيم النص العربي بشكل سليم لتجنب مشكلة انعكاس الكلمات
+                  def wrap_text_arabic(text, font_obj, max_width):
                       lines = []
                       words = text.split()
-                      while words:
-                          line = ''
-                          while words and font.getlength(line + words[0] + ' ') <= max_width:
-                              line += (words.pop(0) + ' ')
-                          lines.append(line.strip())
+                      line = ''
+                      for word in words:
+                          test_line = line + ' ' + word if line else word
+                          test_bidi = get_display(arabic_reshaper.reshape(test_line))
+                          if font_obj.getlength(test_bidi) <= max_width:
+                              line = test_line
+                          else:
+                              lines.append(line)
+                              line = word
+                      if line:
+                          lines.append(line)
                       return lines
-                  
-                  # ترك هوامش ضخمة 200px
-                  lines = wrap_text(bidi_text, font, width - 400)
+
+                  # إزالة الإيموجيات المسببة لظهور المربعات في النص (لأن الخط لا يدعمها)
+                  clean_title = title_text
+                  for em in [" 🍿", " 🔥", " 😱", " 🎬", " ✨", " 🌟", "🍿", "🔥", "😱", "🎬", "✨", "🌟"]:
+                      clean_title = clean_title.replace(em, "")
+
+                  # ترك هوامش
+                  lines = wrap_text_arabic(clean_title, font, width - 400)
                   
                   # رسم النص في المنتصف بلمسة احترافية
-                  line_height = 120 # زيادة المسافة بين الأسطر
+                  line_height = 120 # المسافة بين الأسطر
                   total_height = len(lines) * line_height
                   y_text = (height - total_height) / 2
                   
                   for line in lines:
+                      # معالجة النص العربي ليظهر مشبكاً ومن اليمين لليسار لكل سطر بمفرده
+                      bidi_line = get_display(arabic_reshaper.reshape(line))
+                      
                       # قياس عرض السطر لتوسيطه
-                      text_width = font.getlength(line)
+                      text_width = font.getlength(bidi_line)
                       x_text = (width - text_width) / 2
                       
                       # رسم ظل أسود كثيف وعريض للنص لإبرازه (Outer Glow effect)
-                      for offset in range(3, 10): # ظل عريض متعدد الطبقات
-                          draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
-                          draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
-                          draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
-                          draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
+                      for offset in range(3, 10):
+                          draw.text((x_text+offset, y_text+offset), bidi_line, font=font, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_text-offset), bidi_line, font=font, fill=(0,0,0, 150))
+                          draw.text((x_text+offset, y_text-offset), bidi_line, font=font, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_text+offset), bidi_line, font=font, fill=(0,0,0, 150))
                       
                       # رسم النص الأصلي بلون أبيض ناصع
-                      draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
+                      draw.text((x_text, y_text), bidi_line, font=font, fill=(255, 255, 255))
                       
                       # الانتقال للسطر التالي
                       y_text += line_height
@@ -401,7 +411,6 @@ jobs:
                   return "thumbnail.jpg"
               except Exception as e:
                   print(f"❌ خطأ في صنع الصورة المصغرة: {e}")
-                  # الصورة الاحتياطية
                   Image.new('RGB', (1280, 720), color="black").save("thumbnail.jpg")
                   return "thumbnail.jpg"
 
