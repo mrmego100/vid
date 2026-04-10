@@ -292,7 +292,8 @@ jobs:
                       # دمج صوت اللعبة مع التعليق (التعليق 100% واللعبة 30%)
                       if base.audio is not None:
                           game_audio = base.audio.fx(afx.volumex, 0.3)
-                          final_audio = CompositeAudioClip([game_audio.set_duration(aud.duration), aud.set_position(0)])
+                          # تم الإصلاح هنا: إزالة set_position لأنها خاصة بالفيديو فقط
+                          final_audio = CompositeAudioClip([game_audio.set_duration(aud.duration), aud])
                           base = base.set_audio(final_audio)
                       else:
                           base = base.set_audio(aud)
