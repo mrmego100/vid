@@ -71,9 +71,11 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # ---------------- الإعدادات ---------------- #
-          ENABLE_YOUTUBE_UPLOAD = 0 # 0 لإيقاف الرفع لليوتيوب، 1 للتشغيل
-          VOICE_MALE = "ar-EG-ShakirNeural"
-          VOICE_FEMALE = "ar-EG-SalmaNeural"
+          ENABLE_YOUTUBE_UPLOAD = 0 # 0 لإيقاف الرفع، 1 للتشغيل
+          VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
+          VID_WIDTH = 720  # العرض (720p Vertical)
+          VID_HEIGHT = 1280 # الطول
+          VID_FPS = 40      # معدل الإطارات
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
           SITES_CONFIG = [
@@ -156,16 +158,17 @@ jobs:
               return None
 
           def record_live_game(duration):
-              """تشغيل متصفح وهمي وتسجيل اللعبة مباشرة من الرابط"""
-              print(f"🎮 جاري بدء المتصفح وتسجيل اللعبة لمدة {int(duration)} ثانية (بدقة 480p و 40FPS)...", flush=True)
+              """تشغيل متصفح وهمي وتسجيل اللعبة بالشكل الطولي"""
+              print(f"🎮 جاري تسجيل اللعبة لمدة {int(duration)} ثانية (دقة 720p بالطول - {VID_FPS}FPS)...", flush=True)
               try:
                   os.environ['DISPLAY'] = ':99'
-                  xvfb = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '854x480x24'])
+                  # شاشة وهمية بأبعاد طولية
+                  xvfb = subprocess.Popen(['Xvfb', ':99', '-screen', '0', f'{VID_WIDTH}x{VID_HEIGHT}x24'])
                   time.sleep(3)
                   
                   chrome = subprocess.Popen([
                       'chromium-browser', 
-                      '--kiosk', '--window-size=854,480', 
+                      '--kiosk', f'--window-size={VID_WIDTH},{VID_HEIGHT}', 
                       '--no-sandbox', '--disable-gpu', 
                       '--autoplay-policy=no-user-gesture-required', 
                       'https://meja.do.am/asd/GoZiLG.html'
@@ -173,7 +176,7 @@ jobs:
                   time.sleep(5)
                   
                   rec_duration = int(duration) + 2
-                  os.system(f'ffmpeg -y -video_size 854x480 -framerate 40 -f x11grab -i :99.0+0,0 -t {rec_duration} -c:v libx264 -preset veryfast -pix_fmt yuv420p bg.mp4 -loglevel quiet')
+                  os.system(f'ffmpeg -y -video_size {VID_WIDTH}x{VID_HEIGHT} -framerate {VID_FPS} -f x11grab -i :99.0+0,0 -t {rec_duration} -c:v libx264 -preset veryfast -pix_fmt yuv420p bg.mp4 -loglevel quiet')
                   
                   chrome.terminate()
                   xvfb.terminate()
@@ -201,15 +204,16 @@ jobs:
               except Exception as e:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
-          def create_long_script(t, d):
-              print(f"🤖 جاري تأليف سيناريو قصير (50 كلمة) لمسلسل {t}...", flush=True)
-              prompt = (f"اكتب حوار درامي قصير جداً ومكثف (حوالي 50 كلمة فقط) بين بطل وبطلة لمسلسل '{t}' بناءً على: {d}. "
-                        "ابدأ بـ [HOOK] صادم ومواجهة سريعة. "
-                        "استخدم فقط [MALE] و [FEMALE]. ممنوع وجود راوي أو مقدمات أو رموز أو نجوم ***.")
+          def create_narrative_script(t, d):
+              print(f"🤖 جاري تأليف قصة سردية مشوقة (50 كلمة) لمسلسل {t}...", flush=True)
+              prompt = (f"اكتب قصة سردية قصيرة ومكثفة (حوالي 50 كلمة فقط) تروي أحداث مسلسل '{t}' بناءً على: {d}. "
+                        "يجب أن يبدأ السرد بحدث مشوق وصادم من الكلمة الأولى لجذب الانتباه. "
+                        "ممنوع استخدام أسلوب الحوارات أو الردود المتبادلة. السرد يكون متصلاً بلسان راوي واحد. "
+                        "ممنوع استخدام أي رموز أو نجوم أو أسماء شخصيات مسبوقة بنقطتين.")
               try:
                   response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                  clean_chunk = re.sub(r'[*#_\\-]', '', response).strip()
-                  print(f"   -> تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
+                  clean_chunk = re.sub(r'[*#_\\-\[\]()]', '', response).strip()
+                  print(f"   -> تم توليد السيناريو السردي بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
                   return clean_chunk
               except Exception as e: 
                   print(f"❌ خطأ في توليد السيناريو: {e}")
@@ -217,80 +221,60 @@ jobs:
 
           async def process_audio(script):
               if not script: return False
-              print("🎙️ معالجة الأصوات...", flush=True)
-              segments = re.findall(r'\[(MALE|FEMALE|HOOK)\](.*?)(?=\[(?:MALE|FEMALE|HOOK)\]|$)', script, re.DOTALL)
-              clips = []
-              fast_keys = ['بغضب', 'بصراخ', 'بسرعة', 'خيانة', 'مستحيل', 'يكفي', 'أكرهك', 'صدمة']
-              slow_keys = ['ندم', 'هدوء', 'حزن', 'لماذا', 'بهدوء', 'آسف', 'ببكاء']
-              joy_keys = ['بفرح', 'بضحك', 'سعادة', 'بابتسامة']
-
-              for i, (role, text) in enumerate(segments):
-                  text = text.strip()
-                  if len(text) < 2: continue
-                  
-                  rate = "+28%" if any(w in text for w in fast_keys) else ("-8%" if any(w in text for w in slow_keys) else ("+15%" if any(w in text for w in joy_keys) else "+4%"))
-                  voice = VOICE_MALE if role in ["MALE", "HOOK"] and i % 2 == 0 else VOICE_FEMALE
-                  if role == "FEMALE": voice = VOICE_FEMALE
-                  
-                  clean_text = re.sub(r'\(.*?\)', '', text).strip()
-                  fname = f"s_{i}.mp3"
-                  try:
-                      await edge_tts.Communicate(clean_text, voice, rate=rate).save(fname)
-                      c = AudioFileClip(fname)
-                      clips.append(c)
-                      clips.append(c.volumex(0).set_duration(0.3)) 
-                  except: continue
-
-              if clips:
-                  final_aud = concatenate_audioclips(clips)
-                  final_aud.write_audiofile("v_temp.mp3", fps=44100, verbose=False, logger=None)
-                  for c in clips: c.close()
-                  
-                  # ---------------- إضافة المؤثر الصوتي بحماية ---------------- #
-                  print("🎵 جاري دمج المؤثرات الصوتية...", flush=True)
-                  try:
-                      # محاولة التحميل الآمن باستخدام requests مع التأكد من حجم الملف
-                      r = requests.get('https://upload.wikimedia.org/wikipedia/commons/6/61/Dark_ambient_loop.ogg', timeout=15)
-                      if r.status_code == 200 and len(r.content) > 1000:
-                          with open("sfx.ogg", "wb") as f:
-                              f.write(r.content)
-                  except Exception as e:
-                      print(f"⚠️ فشل تحميل المؤثر الصوتي، سيتم الاستمرار بدونه: {e}")
-
-                  base_aud = AudioFileClip("v_temp.mp3")
-                  success_sfx = False
-                  
-                  if os.path.exists("sfx.ogg") and os.path.getsize("sfx.ogg") > 1000:
-                      try:
-                          sfx = AudioFileClip("sfx.ogg").fx(vfx.volumex, 0.15)
-                          if sfx.duration < base_aud.duration:
-                              sfx = sfx.fx(vfx.loop, duration=base_aud.duration)
-                          else:
-                              sfx = sfx.subclip(0, base_aud.duration)
-                          final_mix = CompositeAudioClip([base_aud, sfx])
-                          final_mix.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
-                          sfx.close()
-                          success_sfx = True
-                      except Exception as e:
-                          print(f"⚠️ خطأ أثناء معالجة ملف المؤثر الصوتي: {e}")
-                  
+              print("🎙️ معالجة الصوت (سرد بصوت شاكر الموحد)...", flush=True)
+              
+              # توليد الصوت للراوي
+              try:
+                  await edge_tts.Communicate(script, VOICE_NARRATOR, rate="+4%").save("v_raw.mp3")
+                  base_aud = AudioFileClip("v_raw.mp3")
+                  base_aud.write_audiofile("v_temp.mp3", fps=44100, verbose=False, logger=None)
                   base_aud.close()
-                  
-                  # إذا فشل الدمج أو فشل التحميل، نستخدم الصوت الأساسي فقط
-                  if not success_sfx:
-                      os.rename("v_temp.mp3", "v.mp3")
-                  else:
-                      if os.path.exists("v_temp.mp3"):
-                          os.remove("v_temp.mp3")
-                          
-                  return True
-              return False
+              except Exception as e:
+                  print(f"❌ خطأ في توليد الصوت: {e}")
+                  return False
+
+              # دمج المؤثرات الصوتية بحماية
+              print("🎵 جاري دمج المؤثرات الصوتية...", flush=True)
+              try:
+                  r = requests.get('https://upload.wikimedia.org/wikipedia/commons/6/61/Dark_ambient_loop.ogg', timeout=15)
+                  if r.status_code == 200 and len(r.content) > 1000:
+                      with open("sfx.ogg", "wb") as f:
+                          f.write(r.content)
+              except Exception as e:
+                  print(f"⚠️ فشل تحميل المؤثر الصوتي، سيتم الاستمرار بدونه: {e}")
+
+              base_aud = AudioFileClip("v_temp.mp3")
+              success_sfx = False
+              
+              if os.path.exists("sfx.ogg") and os.path.getsize("sfx.ogg") > 1000:
+                  try:
+                      sfx = AudioFileClip("sfx.ogg").fx(vfx.volumex, 0.15)
+                      if sfx.duration < base_aud.duration:
+                          sfx = sfx.fx(vfx.loop, duration=base_aud.duration)
+                      else:
+                          sfx = sfx.subclip(0, base_aud.duration)
+                      final_mix = CompositeAudioClip([base_aud, sfx])
+                      final_mix.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                      sfx.close()
+                      success_sfx = True
+                  except Exception as e:
+                      print(f"⚠️ خطأ أثناء معالجة ملف المؤثر الصوتي: {e}")
+              
+              base_aud.close()
+              
+              if not success_sfx:
+                  os.rename("v_temp.mp3", "v.mp3")
+              else:
+                  if os.path.exists("v_temp.mp3"):
+                      os.remove("v_temp.mp3")
+                      
+              return True
 
           async def start_production():
               data = get_data()
               if not data: return
               
-              script = create_long_script(data['title'], data['desc'])
+              script = create_narrative_script(data['title'], data['desc'])
               if len(script.split()) < 10: 
                   print("⚠️ السيناريو قصير جداً، تم إلغاء العملية.")
                   return
@@ -300,40 +284,50 @@ jobs:
                   
                   aud = AudioFileClip("v.mp3")
                   
-                  img = Image.new('RGBA', (854, 480), (0, 0, 0, 0))
+                  # إنشاء واجهة الرسوميات والنصوص للأبعاد الطولية
+                  img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   
-                  try: font = ImageFont.truetype("Roboto-Bold.ttf", 45)
+                  # تصميم اللوجو
+                  try: font = ImageFont.truetype("Roboto-Bold.ttf", 55)
                   except: font = ImageFont.load_default()
-                  draw.text((20, 20), "MegoDrama", font=font, fill=(0, 255, 255, 255))
-                  draw.line((20, 75, 270, 75), fill=(255, 255, 255, 255), width=3)
+                  draw.text((40, 50), "MegoDrama", font=font, fill=(0, 255, 255, 255))
+                  draw.line((40, 115, 340, 115), fill=(255, 255, 255, 255), width=4)
                   
-                  try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 15)
+                  # التنويه باللغة الإنجليزية في أسفل الشاشة
+                  try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 18)
                   except: small_font = ImageFont.load_default()
                   disclaimer = "This game is for entertainment purposes only and complies with YouTube policies."
-                  draw.text((20, 440), disclaimer, font=small_font, fill=(255, 255, 255, 200))
+                  draw.text((20, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   
                   img.save("overlay.png")
 
-                  os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x100:colors=0x00FFFF:mode=cline,crop=400:50:0:50,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
+                  # تصميم الموجات الصوتية
+                  os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=600x120:colors=0x00FFFF:mode=cline,crop=600:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
+                  # تجهيز الفيديو الخلفي أو الصورة
                   bg_vid_file = record_live_game(aud.duration)
                   if bg_vid_file:
-                      base = VideoFileClip(bg_vid_file).without_audio().resize(height=480)
+                      base = VideoFileClip(bg_vid_file).without_audio().resize(height=VID_HEIGHT)
+                      # قص العرض الزائد إذا لزم الأمر ليناسب 720
+                      if base.w > VID_WIDTH:
+                          base = base.crop(x_center=base.w/2, width=VID_WIDTH)
                       if base.duration < aud.duration:
                           base = base.fx(vfx.loop, duration=aud.duration)
                       else:
                           base = base.subclip(0, aud.duration)
                   else:
-                      base = ImageClip("p.jpg").resize(height=480).set_duration(aud.duration)
+                      base = ImageClip("p.jpg").resize(height=VID_HEIGHT).set_duration(aud.duration)
+                      if base.w > VID_WIDTH:
+                          base = base.crop(x_center=base.w/2, width=VID_WIDTH)
 
                   overlay = ImageClip("overlay.png").set_duration(aud.duration)
                   
                   if os.path.exists("temp_waves.mp4"):
-                      waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((20, 85)).set_opacity(0.9)
+                      waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position(('center', VID_HEIGHT - 220)).set_opacity(0.9)
                       final_vid = CompositeVideoClip([base, overlay, waves]).set_audio(aud)
                       
-                      final_vid.write_videofile("out.mp4", fps=40, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                      final_vid.write_videofile("out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
                   if os.path.exists("out.mp4"):
                       upload_to_catbox("out.mp4")
@@ -345,8 +339,8 @@ jobs:
                               youtube = build('youtube', 'v3', credentials=creds)
                               body = {
                                   'snippet': {
-                                      'title': f"مواجهة نارية في مسلسل {data['title']} | القصة كاملة",
-                                      'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بدون راوي.\nThis game is for entertainment purposes only and complies with YouTube policies.\nإنتاج: MegoDrama",
+                                      'title': f"القصة الكاملة لمسلسل {data['title']} 🍿",
+                                      'description': f"أحداث مشوقة وملخص سريع لمسلسل {data['title']}.\nThis game is for entertainment purposes only and complies with YouTube policies.\nإنتاج: MegoDrama",
                                       'categoryId': '24'
                                   },
                                   'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
