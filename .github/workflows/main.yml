@@ -35,8 +35,14 @@ jobs:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
           sudo apt-get update -q
-          # تثبيت أدوات التسجيل والخطوط العربية لدعم الترجمة والصورة المصغرة
-          sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra libfribidi0 -q
+          # تثبيت أدوات التسجيل والخطوط العربية المطلوبة للترجمة ASS
+          sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra -q
+          
+          # إعداد الخط العربي ونقله لمسار النظام ليقرأه FFmpeg
+          wget -q -O arabic.ttf https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf
+          sudo mkdir -p /usr/share/fonts/truetype/custom
+          sudo cp arabic.ttf /usr/share/fonts/truetype/custom/
+          sudo fc-cache -fv
           
           # إعداد كارت صوت وهمي لتسجيل أوديو اللعبة
           pulseaudio -D --exit-idle-time=-1 || true
@@ -44,13 +50,12 @@ jobs:
           pacmd set-default-sink v1 || true
           pacmd set-default-source v1.monitor || true
           
-          # تثبيت مكتبات بايثون شاملة أدوات دعم اللغة العربية للصورة المصغرة
+          # إضافة مكتبات دعم اللغة العربية في الصور (arabic-reshaper, python-bidi) للصورة المصغرة
           for i in {1..5}; do
             pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
           done
           
-          # تحميل خط عربي لكتابة العنوان على الصورة المصغرة
-          wget -O arabic.ttf https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf
+          wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
@@ -62,7 +67,7 @@ jobs:
           import edge_tts
           import arabic_reshaper
           from bidi.algorithm import get_display
-          from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
           import PIL.Image
           if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -85,16 +90,16 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # ---------------- الإعدادات ---------------- #
-          ENABLE_YOUTUBE_UPLOAD = 0 # 0 لإيقاف الرفع، 1 للتشغيل
-          VOICE_NARRATOR = "ar-EG-ShakirNeural"
-          VID_WIDTH = 1280
-          VID_HEIGHT = 1400
-          VID_FPS = 40
+          ENABLE_YOUTUBE_UPLOAD = 1 # 0 لإيقاف الرفع، 1 للتشغيل
+          VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
+          VID_WIDTH = 1280  # العرض
+          VID_HEIGHT = 1400 # الط الطول
+          VID_FPS = 40      # معدل الإطارات
           
-          # التحكم في عدد كلمات القصة (يمكنك تغييرها كما تحب)
-          STORY_WORDS_MIN = 50
-          STORY_WORDS_MAX = 100
-
+          # --- إعدادات كلمات السكربت --- #
+          STORY_MIN_WORDS = 1500  # الحد الأدنى لعدد كلمات القصة (تحكم بها كما تحب)
+          STORY_MAX_WORDS = 1600  # الحد الأقصى لعدد كلمات القصة
+          
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
           SITES_CONFIG = [
@@ -177,6 +182,7 @@ jobs:
               return None
 
           def record_live_game(duration):
+              """تشغيل متصفح وتسجيل اللعبة (فيديو + صوت)"""
               print(f"🎮 جاري تسجيل اللعبة والصوت لمدة {int(duration)} ثانية ({VID_WIDTH}x{VID_HEIGHT} - {VID_FPS}FPS)...", flush=True)
               try:
                   os.environ['DISPLAY'] = ':99'
@@ -193,11 +199,12 @@ jobs:
                   time.sleep(5)
                   
                   rec_duration = int(duration) + 2
+                  
                   cmd = f'ffmpeg -y -video_size {VID_WIDTH}x{VID_HEIGHT} -framerate {VID_FPS} -f x11grab -i :99.0+0,0 -f pulse -i default -t {rec_duration} -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac bg.mp4 -loglevel quiet'
                   ret = os.system(cmd)
                   
                   if ret != 0 or not os.path.exists("bg.mp4"):
-                      print("⚠️ تنبيه: فشل تسجيل الصوت عبر PulseAudio، سيتم تسجيل الشاشة بدون صوت احتياطياً...", flush=True)
+                      print("⚠️ تنبيه: فشل تسجيل الصوت، سيتم تسجيل الشاشة بدون صوت احتياطياً...", flush=True)
                       os.system(f'ffmpeg -y -video_size {VID_WIDTH}x{VID_HEIGHT} -framerate {VID_FPS} -f x11grab -i :99.0+0,0 -t {rec_duration} -c:v libx264 -preset veryfast -pix_fmt yuv420p bg.mp4 -loglevel quiet')
 
                   chrome.terminate()
@@ -227,130 +234,131 @@ jobs:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
           def create_narrative_script(t, d):
-              print(f"🤖 جاري تأليف القصة ({STORY_WORDS_MIN}-{STORY_WORDS_MAX} كلمة)...", flush=True)
-              prompt = (f"أنت راوي قصص. اكتب قصة سردية عن مسلسل '{t}' بناءً على: {d}. "
-                        f"شرط إجباري وحاسم: يجب أن يتراوح طول القصة بين {STORY_WORDS_MIN} إلى {STORY_WORDS_MAX} كلمة بالتمام والكمال. قم بزيادة الوصف للوصول للرقم. "
-                        "يجب أن تبدأ بـ 'هوك' (Hook) قوي جداً وصادم يخاطب المشاهد (بصيغة أنت) لجذب انتباهه من أول كلمة. "
-                        "ممنوع استخدام الحوارات المتبادلة. السرد متصل بلسان راوي واحد. "
-                        "ممنوع استخدام أي رموز، أقواس، نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
-                        "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً'). ابدأ بسرد القصة مباشرة وبدون أي مقدمات أو ردود من الذكاء الاصطناعي.")
+              print(f"🤖 جاري تأليف قصة سردية ({STORY_MIN_WORDS}-{STORY_MAX_WORDS} كلمة) لمسلسل {t}...", flush=True)
+              prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
+                        f"شرط إجباري وحاسم: يجب أن يتراوح طول القصة بين {STORY_MIN_WORDS} إلى {STORY_MAX_WORDS} كلمة بالتمام والكمال. قم بزيادة الوصف وتوسيع الأحداث للوصول لهذا الطول. "
+                        "يجب أن تبدأ القصة بـ 'هوك' (Hook) قوي جداً وصادم يخاطب المشاهد مباشرة (بصيغة أنت) لجذب انتباهه من الثواني الأولى. "
+                        "ممنوع تماماً استخدام أسلوب الحوارات أو الردود المتبادلة. السرد يجب أن يكون متصلاً بلسان راوي واحد يحكي الأحداث بإثارة وتفصيل دقيق. "
+                        "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
+                        "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
               try:
                   response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
                   clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
-                  print(f"   -> تم توليد القصة بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
+                  print(f"   -> تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
                   return clean_chunk
               except Exception as e: 
                   print(f"❌ خطأ في توليد السيناريو: {e}")
                   return ""
 
-          def generate_youtube_title(story):
-              print("🤖 جاري توليد عنوان يوتيوب جذاب...", flush=True)
-              prompt = (f"بناءً على هذه القصة: '{story[:600]}...'\n"
-                        "اكتب عنوان يوتيوب واحد فقط، مشوق وجذاب جداً (Clickbait) يشبه هذا النمط: 'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال ويدخل معسكر الأعداء وحده.' "
-                        "يجب أن يكون مستخرجاً من أحداث القصة الحقيقية. لا تضع أي رموز أو أقواس، فقط أرسل العنوان النهائي مباشرة.")
+          # ----- توليد عنوان اليوتيوب المتوافق مع طلبك -----
+          def generate_youtube_title(show_title, story_text):
+              print("🎯 جاري توليد عنوان يوتيوب ذكي...", flush=True)
+              prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لفيديو يحكي قصة مسلسل '{show_title}'. "
+                        "يجب أن يكون العنوان بنفس هذا النمط وبناءً على أحداث القصة: "
+                        "'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال ويدخل معسكر الأعداء وحده... [اسم المسلسل]' "
+                        f"استخرج حدثاً مشوقاً من هذه القصة: {story_text[:1000]}... "
+                        f"واكتب العنوان بناءً عليه ليكون غامضاً ومثيراً، واختتمه باسم المسلسل '{show_title}'. لا تكتب أي شيء آخر غير العنوان.")
               try:
-                  title = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}]).strip()
-                  return title.replace('"', '').replace("'", "")
+                  title = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
+                  return title.replace('"', '').strip()
               except:
-                  return "أحداث صادمة لن تتوقعها أبداً!"
+                  return f"الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته... مسلسل {show_title}"
 
-          def format_description(story, real_title):
-              words = real_title.split() + ["مدبلج", "كامل", "مترجم"]
-              desc_words = story.split()[:150] # نأخذ أول 150 كلمة من القصة كجزء للوصف
-              step = max(1, len(desc_words) // (len(words) + 1))
-              for i, w in enumerate(words):
-                  insert_idx = (i + 1) * step
-                  if insert_idx < len(desc_words):
-                      desc_words.insert(insert_idx, w)
-              return " ".join(desc_words) + "..."
+          # ----- توليد وصف اليوتيوب المدمج -----
+          def generate_youtube_desc(show_title, story_text):
+              print("📝 جاري توليد وصف يوتيوب مدمج...", flush=True)
+              prompt = (f"اكتب وصفاً لفيديو يوتيوب يحكي قصة مسلسل. "
+                        f"القصة: {story_text[:600]}... "
+                        f"شروط الوصف: 1. ادمج كلمات اسم المسلسل '{show_title}' بحيث تضع كل كلمة من اسمه متفرقة في جملة مختلفة داخل الوصف ولا تضع الاسم كاملاً متصلاً أبداً. "
+                        "2. أضف الكلمات المفتاحية: 'مدبلج'، 'كامل'، 'مترجم' بشكل طبيعي ومندمج في السياق. "
+                        "3. اجعله مشوقاً بدون مقدمات ولا تذكر أنك تدمج الكلمات.")
+              try:
+                  desc = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
+                  return desc.strip()
+              except:
+                  words = show_title.split()
+                  desc_fallback = "أحداث نارية ومشوقة! "
+                  for w in words: desc_fallback += f"نرى كيف تغيرت الأقدار مع {w}. "
+                  desc_fallback += "مسلسل رائع مدبلج و كامل وتستطيع مشاهدته مترجم بأفضل جودة."
+                  return desc_fallback
 
-          def create_thumbnail(title):
-              print("🎨 جاري تصميم الصورة المصغرة (Thumbnail)...", flush=True)
-              width, height = 1280, 720
-              img = Image.new('RGB', (width, height), color=(15, 15, 25))
-              draw = ImageDraw.Draw(img)
-              
-              # رسم أشكال دخانية وملونة مموهة
-              colors = [(255, 50, 50), (50, 50, 255), (50, 255, 50), (255, 255, 50), (255, 50, 255), (50, 255, 255)]
-              for _ in range(40):
-                  x = random.randint(-200, width + 200)
-                  y = random.randint(-200, height + 200)
-                  r = random.randint(150, 400)
-                  color = random.choice(colors)
-                  draw.ellipse([x-r, y-r, x+r, y+r], fill=color)
+          # ----- تصميم الصورة المصغرة (خلفية مموهة + تفاصيل + نص) -----
+          def create_youtube_thumbnail(title_text):
+              print("🖼️ جاري تصميم الصورة المصغرة بالذكاء الصناعي...", flush=True)
+              try:
+                  width, height = 1280, 720
+                  # خلفية أساسية غامقة
+                  img = Image.new('RGB', (width, height), color=(15, 15, 25))
+                  draw = ImageDraw.Draw(img)
                   
-              img = img.filter(ImageFilter.GaussianBlur(radius=80)) # تمويه عالي
-              enhancer = ImageEnhance.Brightness(img)
-              img = enhancer.enhance(0.4) # تغميق الخلفية لبروز النص
-              draw = ImageDraw.Draw(img)
-              
-              reshaped_text = arabic_reshaper.reshape(title)
-              bidi_text = get_display(reshaped_text)
-              
-              try: font = ImageFont.truetype("arabic.ttf", 65)
-              except: font = ImageFont.load_default()
-              
-              import textwrap
-              lines = textwrap.wrap(bidi_text, width=28)
-              y_text = height // 2 - (len(lines) * 90) // 2
-              
-              for line in lines:
-                  bbox = draw.textbbox((0, 0), line, font=font)
-                  w = bbox[2] - bbox[0]
-                  x_text = (width - w) / 2
-                  # Stroke
-                  stroke_width = 4
-                  for dx in range(-stroke_width, stroke_width+1):
-                      for dy in range(-stroke_width, stroke_width+1):
-                          draw.text((x_text+dx, y_text+dy), line, font=font, fill=(0,0,0))
-                  # Text
-                  draw.text((x_text, y_text), line, font=font, fill=(255,255,255))
-                  y_text += 90
+                  # رسم أشكال دخانية وألوان عشوائية
+                  for _ in range(45):
+                      x1 = random.randint(-300, width + 100)
+                      y1 = random.randint(-300, height + 100)
+                      x2 = x1 + random.randint(300, 900)
+                      y2 = y1 + random.randint(300, 900)
+                      color = (random.randint(40, 255), random.randint(40, 150), random.randint(50, 255))
+                      draw.ellipse([x1, y1, x2, y2], fill=color)
                   
-              img.save("thumb.jpg")
-
-          def format_ass_time(vtt_time):
-              # تحويل الوقت من VTT (HH:MM:SS.mmm) إلى ASS (H:MM:SS.cc)
-              h, m, s = vtt_time.split('.')[0].split(':')
-              ms = vtt_time.split('.')[1][:2]
-              return f"{int(h)}:{m}:{s}.{ms}"
-
-          def vtt_to_ass(vtt_file, ass_file):
-              ass_header = """[Script Info]
-ScriptType: v4.00+
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Noto Naskh Arabic,80,&H0000FFFF,&H00000000,1,0,1,4,2,2,20,20,350,1
-
-[Events]
-Format: Layer, Start, End, Style, Text\n"""
-              events = []
-              with open(vtt_file, 'r', encoding='utf-8') as f:
-                  lines = f.readlines()
+                  # دمج الأشكال بقوة لعمل تأثير الضباب/الدخان السحري
+                  img = img.filter(ImageFilter.GaussianBlur(radius=90))
                   
-              i = 0
-              while i < len(lines):
-                  if '-->' in lines[i]:
-                      times = lines[i].strip().split(' --> ')
-                      start = format_ass_time(times[0])
-                      end = format_ass_time(times[1])
-                      text = lines[i+1].strip()
-                      events.append(f"Dialogue: 0,{start},{end},Default,{text}\n")
-                      i += 2
-                  else:
-                      i += 1
+                  # إضافة تفاصيل وخطوط متقاطعة
+                  draw = ImageDraw.Draw(img)
+                  for _ in range(20):
+                      draw.line([(random.randint(0, width), random.randint(0, height)), 
+                                 (random.randint(0, width), random.randint(0, height))], 
+                                fill=(255, 255, 255, 30), width=random.randint(1, 4))
+
+                  # معالجة النص العربي ليظهر مشبكاً ومن اليمين لليسار
+                  reshaped_text = arabic_reshaper.reshape(title_text)
+                  bidi_text = get_display(reshaped_text)
+                  
+                  try:
+                      font = ImageFont.truetype("arabic.ttf", 65)
+                  except:
+                      font = ImageFont.load_default()
+                  
+                  # تقسيم النص لأسطر
+                  def wrap_text(text, font, max_width):
+                      lines, words = [], text.split()
+                      while words:
+                          line = ''
+                          while words and font.getlength(line + words[0] + ' ') <= max_width:
+                              line += (words.pop(0) + ' ')
+                          lines.append(line.strip())
+                      return lines
+                  
+                  lines = wrap_text(bidi_text, font, width - 150)
+                  line_height = 80
+                  total_height = len(lines) * line_height
+                  y_text = (height - total_height) / 2
+                  
+                  for line in lines:
+                      text_width = font.getlength(line)
+                      x_text = (width - text_width) / 2
+                      # ظل أسود عريض للنص
+                      draw.text((x_text+5, y_text+5), line, font=font, fill=(0,0,0))
+                      draw.text((x_text-3, y_text-3), line, font=font, fill=(0,0,0))
+                      # النص الأصلي
+                      draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
+                      y_text += line_height
                       
-              with open(ass_file, 'w', encoding='utf-8') as f:
-                  f.write(ass_header)
-                  f.writelines(events)
+                  img.save("thumbnail.jpg")
+                  return "thumbnail.jpg"
+              except Exception as e:
+                  print(f"❌ خطأ في صنع الصورة المصغرة: {e}")
+                  Image.new('RGB', (1280, 720), color="black").save("thumbnail.jpg")
+                  return "thumbnail.jpg"
 
-          async def process_audio(script):
+          # ----- نظام معالجة الصوت واستخراج الترجمة (ASS) -----
+          async def process_audio_and_subs(script):
               if not script: return False
-              print("🎙️ معالجة الصوت والترجمة العربية الدقيقة...", flush=True)
+              print("🎙️ معالجة الصوت وبناء ملف الترجمة ASS...", flush=True)
               try:
                   communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="+4%")
                   submaker = edge_tts.SubMaker()
+                  
                   with open("v.mp3", "wb") as file:
                       async for chunk in communicate.stream():
                           if chunk["type"] == "audio":
@@ -358,13 +366,45 @@ Format: Layer, Start, End, Style, Text\n"""
                           elif chunk["type"] == "WordBoundary":
                               submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
                   
-                  with open("subs.vtt", "w", encoding="utf-8") as file:
-                      file.write(submaker.generate_subs())
+                  # إنشاء ملف ASS بالتنسيق المطلوب
+                  ass_header = """[Script Info]
+          ScriptType: v4.00+
+
+          [V4+ Styles]
+          Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+          Style: Default,Noto Naskh Arabic,48,&H00FFFFFF,&H00000000,1,0,1,3,0,2,20,20,50,1
+
+          [Events]
+          Format: Layer, Start, End, Style, Text
+          """
+                  ass_lines = []
+                  vtt_text = submaker.generate_subs()
+                  blocks = vtt_text.split('\n\n')
+                  
+                  def to_ass_time(t):
+                      parts = t.split(':')
+                      if len(parts) == 3:
+                          h, m, s_ms = parts
+                          s, ms = s_ms.split('.') if '.' in s_ms else (s_ms, "000")
+                          return f"{int(h)}:{int(m):02d}:{int(s):02d}.{ms[:2]}"
+                      return "0:00:00.00"
+
+                  for block in blocks:
+                      lines = block.split('\n')
+                      if len(lines) >= 2 and '-->' in lines[0]:
+                          times = lines[0].split(' --> ')
+                          start_ass = to_ass_time(times[0].strip())
+                          end_ass = to_ass_time(times[1].strip())
+                          text_line = " ".join(lines[1:]).strip()
+                          if text_line:
+                              ass_lines.append(f"Dialogue: 0,{start_ass},{end_ass},Default,{text_line}")
+
+                  with open("subs.ass", "w", encoding="utf-8") as f:
+                      f.write(ass_header + "\n".join(ass_lines))
                       
-                  vtt_to_ass("subs.vtt", "subs.ass")
                   return True
               except Exception as e:
-                  print(f"❌ خطأ في توليد الصوت/الترجمة: {e}")
+                  print(f"❌ خطأ في توليد الصوت والترجمة: {e}")
                   return False
 
           async def start_production():
@@ -375,16 +415,13 @@ Format: Layer, Start, End, Style, Text\n"""
               if len(script.split()) < 10: 
                   print("⚠️ السيناريو قصير جداً، تم إلغاء العملية.")
                   return
-                  
-              yt_title = generate_youtube_title(script)
-              yt_desc = format_description(script, data['title'])
-              create_thumbnail(yt_title)
               
-              if await process_audio(script):
+              if await process_audio_and_subs(script):
                   print("🎬 بدء المونتاج السينمائي ودمج الأصوات...", flush=True)
                   
                   aud = AudioFileClip("v.mp3")
                   
+                  # إنشاء واجهة الرسوميات بدون أي أسماء (MegoDrama محذوفة)
                   img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
@@ -393,7 +430,7 @@ Format: Layer, Start, End, Style, Text\n"""
                   draw.text((40, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
 
-                  # تصميم الموجات الصوتية في الأعلى يميناً ومتعددة الألوان متحركة
+                  # تصميم الموجات الصوتية بشكل حلو ومتحرك باستمرار
                   os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
                   bg_vid_file = record_live_game(aud.duration)
@@ -425,51 +462,59 @@ Format: Layer, Start, End, Style, Text\n"""
                   if os.path.exists("temp_waves.mp4"):
                       waves = VideoFileClip("temp_waves.mp4").without_audio().fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((VID_WIDTH - 430, 40)).set_opacity(0.9)
                       final_vid = CompositeVideoClip([base, overlay, waves])
-                      final_vid = final_vid.set_audio(base.audio)
-                      final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   else:
                       final_vid = CompositeVideoClip([base, overlay])
-                      final_vid = final_vid.set_audio(base.audio)
-                      final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                      
+                  final_vid = final_vid.set_audio(base.audio)
+                  final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
-                  # حرق ملف الترجمة العربي (ASS) على الفيديو النهائي
-                  print("🔤 حرق الترجمة العربية على الفيديو...", flush=True)
-                  os.system('ffmpeg -y -i temp_out.mp4 -vf "subtitles=subs.ass" -c:v libx264 -preset fast -c:a copy final_out.mp4 -loglevel quiet')
+                  aud.close()
+                  base.close()
+                  overlay.close()
+                  
+                  # ----- دمج ملف الترجمة ASS في الفيديو النهائي -----
+                  print("✍️ جاري حرق الترجمة العربية (ASS) على الفيديو...", flush=True)
+                  os.system('ffmpeg -y -i temp_out.mp4 -vf "ass=subs.ass" -c:a copy out.mp4 -loglevel quiet')
+                  
+                  # في حال فشل حرق الترجمة لأي سبب تقني، نستخدم النسخة بدون ترجمة
+                  if not os.path.exists("out.mp4"):
+                      os.rename("temp_out.mp4", "out.mp4")
 
-                  if os.path.exists("final_out.mp4"):
-                      upload_to_catbox("final_out.mp4")
+                  if os.path.exists("out.mp4"):
+                      upload_to_catbox("out.mp4")
+                      
+                      yt_title = generate_youtube_title(data['title'], script)
+                      yt_desc = generate_youtube_desc(data['title'], script)
+                      thumb_path = create_youtube_thumbnail(yt_title)
 
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
-                          print("📤 جاري الرفع إلى يوتيوب...", flush=True)
+                          print(f"📤 جاري الرفع إلى يوتيوب بعنوان:\n{yt_title}", flush=True)
                           try:
                               creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
                               youtube = build('youtube', 'v3', credentials=creds)
                               body = {
                                   'snippet': {
                                       'title': yt_title,
-                                      'description': yt_desc,
+                                      'description': yt_desc + "\n\nThis game is for entertainment purposes only and complies with YouTube policies.",
                                       'categoryId': '24'
                                   },
                                   'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
                               }
-                              res = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("final_out.mp4", chunksize=-1, resumable=True)).execute()
-                              print("✅ تم الرفع على يوتيوب بنجاح!")
+                              req = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True))
+                              res = req.execute()
                               
-                              # رفع الصورة المصغرة
-                              if os.path.exists("thumb.jpg"):
-                                  youtube.thumbnails().set(videoId=res['id'], media_body=MediaFileUpload('thumb.jpg')).execute()
-                                  print("✅ تم رفع الصورة المصغرة بنجاح!")
+                              if os.path.exists(thumb_path):
+                                  print("🖼️ رفع الصورة المصغرة المخصصة...", flush=True)
+                                  youtube.thumbnails().set(videoId=res['id'], media_body=MediaFileUpload(thumb_path)).execute()
+                                  
+                              print("✅ تم الرفع على يوتيوب بنجاح!")
                           except Exception as e: 
                               print(f"❌ فشل الرفع لليوتيوب: {e}")
                       else:
-                          print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على إعدادات ENABLE_YOUTUBE_UPLOAD (القيمة 0).")
+                          print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على الإعدادات.")
 
                       with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                           f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
-                  
-                  aud.close()
-                  base.close()
-                  overlay.close()
 
           if __name__ == "__main__":
               asyncio.run(start_production())
