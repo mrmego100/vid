@@ -212,7 +212,8 @@ jobs:
                         "ممنوع استخدام أي رموز أو نجوم أو أسماء شخصيات مسبوقة بنقطتين.")
               try:
                   response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                  clean_chunk = re.sub(r'[*#_\\-\[\]()]', '', response).strip()
+                  # الإصلاح هنا: استخدام التعبير المنطقي الآمن لمنع خطأ bad character range
+                  clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
                   print(f"   -> تم توليد السيناريو السردي بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
                   return clean_chunk
               except Exception as e: 
