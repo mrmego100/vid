@@ -234,24 +234,40 @@ jobs:
               except Exception as e:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
+          # ----- نظام التأليف الذكي مع التبديل التلقائي (Smart Fallback & Retry) -----
           def create_narrative_script(t, d):
-              print(f"🤖 جاري تأليف قصة سردية ({STORY_MIN_WORDS}-{STORY_MAX_WORDS} كلمة) لمسلسل {t}...", flush=True)
+              print(f"🤖 جاري تأليف قصة سردية ({STORY_MIN_WORDS}-{STORY_MAX_WORDS} كلمة) لمسلسل '{t}'...", flush=True)
               prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
                         f"شرط إجباري وحاسم: يجب أن يتراوح طول القصة بين {STORY_MIN_WORDS} إلى {STORY_MAX_WORDS} كلمة بالتمام والكمال. قم بزيادة الوصف وتوسيع الأحداث للوصول لهذا الطول. "
                         "يجب أن تبدأ القصة بـ 'هوك' (Hook) قوي جداً وصادم يخاطب المشاهد مباشرة (بصيغة أنت) لجذب انتباهه من الثواني الأولى. "
                         "ممنوع تماماً استخدام أسلوب الحوارات أو الردود المتبادلة. السرد يجب أن يكون متصلاً بلسان راوي واحد يحكي الأحداث بإثارة وتفصيل دقيق. "
                         "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
                         "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
-              try:
-                  response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                  clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
-                  print(f"   -> تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
-                  return clean_chunk
-              except Exception as e: 
-                  print(f"❌ خطأ في توليد السيناريو: {e}")
-                  return ""
+              
+              # نماذج مختلفة للتبديل بينها لتفادي أخطاء الـ TransferEncodingError
+              models_to_try = [g4f.models.gpt_4, g4f.models.gpt_35_turbo, "gpt-4", "gpt-3.5-turbo"]
+              
+              for attempt in range(5): # 5 محاولات لضمان النجاح
+                  model = models_to_try[attempt % len(models_to_try)]
+                  try:
+                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو (باستخدام موديل احتياطي إن لزم الأمر)...", flush=True)
+                      response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      
+                      # التحقق من أن الرد يحتوي على نص ومكتمل بشكل معقول
+                      if response and len(response.split()) > 150: 
+                          clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
+                          print(f"   -> ✅ تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
+                          return clean_chunk
+                      else:
+                          print("⚠️ الرد من السيرفر كان غير مكتمل أو قصير جداً، جاري التبديل للمحاولة التالية...", flush=True)
+                  except Exception as e: 
+                      print(f"❌ خطأ في الاتصال بالذكاء الاصطناعي (المحاولة {attempt + 1}): {e}", flush=True)
+                  
+                  time.sleep(7) # راحة للسيرفر قبل المحاولة التالية
+              
+              return ""
 
-          # ----- توليد عنوان اليوتيوب المضاد للانهيار (بدون اسم المسلسل وبدون ردود) -----
+          # ----- توليد عنوان اليوتيوب المضاد للانهيار مع نظام ذكي للتبديل -----
           def generate_youtube_title(show_title, story_text):
               print("🎯 جاري توليد عنوان يوتيوب ذكي ومضاد للانهيار...", flush=True)
               prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لفيديو يحكي قصة. "
@@ -259,18 +275,20 @@ jobs:
                         "'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال ويدخل معسكر الأعداء وحده' "
                         f"استخرج حدثاً مشوقاً من هذه القصة: {story_text[:1000]}... "
                         "تحذير صارم جداً: اكتب جملة العنوان فقط لا غير. لا تكتب 'إليك العنوان' ولا تكتب أي شروحات أو مقدمات أو خاتمات. ممنوع استخدام أقواس أو رموز أو اسم المسلسل في العنوان. أريد جملة العنوان فقط.")
-              try:
-                  raw_title = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                  # تنظيف صارم العنوان من أي رموز أو سطر جديد لتفادي أخطاء يوتيوب
-                  clean_title = raw_title.replace('"', '').replace('[', '').replace(']', '').replace('*', '').replace(' العنوان', '').replace('جملة', '').strip()
-                  # قص العنوان إذا تجاوز الحد المسموح ليوتيوب (100 حرف) لتفادي الخطأ 400
-                  if len(clean_title) > 95:
-                      clean_title = clean_title[:95] + "..."
-                  return clean_title
-              except:
-                  return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
+              
+              models_to_try = [g4f.models.gpt_4, g4f.models.gpt_35_turbo, "gpt-4"]
+              for attempt in range(3):
+                  model = models_to_try[attempt % len(models_to_try)]
+                  try:
+                      raw_title = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      clean_title = raw_title.replace('"', '').replace('[', '').replace(']', '').replace('*', '').replace(' العنوان', '').replace('جملة', '').strip()
+                      if len(clean_title) > 95: clean_title = clean_title[:95] + "..."
+                      return clean_title
+                  except Exception as e:
+                      time.sleep(3)
+              return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
 
-          # ----- توليد وصف اليوتيوب المضاد للردود الحوارية (دمج متفرق) -----
+          # ----- توليد وصف اليوتيوب المضاد للردود الحوارية مع نظام ذكي للتبديل -----
           def generate_youtube_desc(show_title, story_text):
               print("📝 جاري توليد وصف يوتيوب مدمج ومتفرق...", flush=True)
               prompt = (f"اكتب وصفاً لفيديو يوتيوب يحكي قصة. "
@@ -278,17 +296,22 @@ jobs:
                         f"شروط الوصف: 1. اسم المسلسل هو '{show_title}'. ممنوع منعاً باتاً كتابة الاسم كاملاً متصلاً. يجب أن تأخذ كل كلمة من كلمات الاسم وتضعها متفرقة ومبعثرة في جمل مختلفة داخل الوصف بشكل يبدو طبيعياً جداً كجزء من سياق القصة. "
                         "2. أضف الكلمات المفتاحية: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة ومتفرقة بشكل طبيعي ومندمج في السياق، لا تضعها بجانب بعضها أو في أقواس. "
                         "3. تحذير صارم جداً: اكتب نص الوصف للقصة فقط لا غير. ممنوع كتابة أي مقدمات أو ردود حوارية مثل 'بالتأكيد' أو 'تفضل الوصف'. ممنوع استخدام النجوم (**) أو الأقواس للتحديد.")
-              try:
-                  raw_desc = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                  # تنظيف صارم للوصف من الردود الحوارية
-                  clean_desc = re.sub(r'(حسنا|بالتأكيد|إليك|تفضل|بالتحديد|هذا هو|الوصف|:\n|^\n)', '', raw_desc, flags=re.IGNORECASE).strip()
-                  return clean_desc
-              except:
-                  words = show_title.split()
-                  desc_fallback = "أحداث نارية ومشوقة! "
-                  for w in words: desc_fallback += f"نرى كيف تغيرت الأقدار مع {w}. "
-                  desc_fallback += "تابع القصة كاملة هنا. مسلسل رائع مدبلج وتستطيع مشاهدته مترجم بأفضل جودة."
-                  return desc_fallback
+              
+              models_to_try = [g4f.models.gpt_4, g4f.models.gpt_35_turbo, "gpt-4"]
+              for attempt in range(3):
+                  model = models_to_try[attempt % len(models_to_try)]
+                  try:
+                      raw_desc = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      clean_desc = re.sub(r'(حسنا|بالتأكيد|إليك|تفضل|بالتحديد|هذا هو|الوصف|:\n|^\n)', '', raw_desc, flags=re.IGNORECASE).strip()
+                      return clean_desc
+                  except Exception as e:
+                      time.sleep(3)
+                      
+              words = show_title.split()
+              desc_fallback = "أحداث نارية ومشوقة! "
+              for w in words: desc_fallback += f"نرى كيف تغيرت الأقدار مع {w}. "
+              desc_fallback += "تابع القصة كاملة هنا. مسلسل رائع مدبلج وتستطيع مشاهدته مترجم بأفضل جودة."
+              return desc_fallback
 
           # ----- تصميم الصورة المصغرة (بوستر مموه + عنوان عربي ضخم مع إيموجي) -----
           def create_youtube_thumbnail(title_text):
@@ -445,7 +468,7 @@ jobs:
                   print("⚠️ لم يتم العثور على أي مسلسل جديد.")
                   return
               
-              # تأليف القصة بالذكاء الاصطناعي
+              # تأليف القصة بالذكاء الاصطناعي بنظام الموثوقية
               script = create_narrative_script(data['title'], data['desc'])
               if len(script.split()) < 10: 
                   print("⚠️ السيناريو قصير جداً، تم إلغاء العملية.")
@@ -483,7 +506,7 @@ jobs:
                       else:
                           base = base.subclip(0, aud.duration)
                           
-                      # دمج صوت اللعبة مع التعليق (التعليق 100% واللعبة 30%)
+                      # دمج صوت اللعبة مع التعليق (التعليق 100% واللعبة 10%)
                       if base.audio is not None:
                           game_audio = base.audio.fx(afx.volumex, 0.1)
                           final_audio = CompositeAudioClip([game_audio.set_duration(aud.duration), aud])
