@@ -34,7 +34,6 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          # تثبيت الحزم الأساسية لتسجيل الشاشة الوهمية (المتصفح + Xvfb)
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg xvfb chromium-browser -q
           
@@ -160,12 +159,10 @@ jobs:
               """تشغيل متصفح وهمي وتسجيل اللعبة مباشرة من الرابط"""
               print(f"🎮 جاري بدء المتصفح وتسجيل اللعبة لمدة {int(duration)} ثانية (بدقة 480p و 40FPS)...", flush=True)
               try:
-                  # تجهيز شاشة وهمية Xvfb بأبعاد 854x480
                   os.environ['DISPLAY'] = ':99'
                   xvfb = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '854x480x24'])
                   time.sleep(3)
                   
-                  # فتح المتصفح بوضع الـ Kiosk للعب التلقائي
                   chrome = subprocess.Popen([
                       'chromium-browser', 
                       '--kiosk', '--window-size=854,480', 
@@ -173,9 +170,8 @@ jobs:
                       '--autoplay-policy=no-user-gesture-required', 
                       'https://meja.do.am/asd/GoZiLG.html'
                   ])
-                  time.sleep(5) # انتظار تحميل اللعبة
+                  time.sleep(5)
                   
-                  # تصوير الشاشة الوهمية باستخدام FFmpeg
                   rec_duration = int(duration) + 2
                   os.system(f'ffmpeg -y -video_size 854x480 -framerate 40 -f x11grab -i :99.0+0,0 -t {rec_duration} -c:v libx264 -preset veryfast -pix_fmt yuv420p bg.mp4 -loglevel quiet')
                   
@@ -250,25 +246,43 @@ jobs:
                   final_aud.write_audiofile("v_temp.mp3", fps=44100, verbose=False, logger=None)
                   for c in clips: c.close()
                   
-                  # ---------------- إضافة المؤثر الصوتي ---------------- #
+                  # ---------------- إضافة المؤثر الصوتي بحماية ---------------- #
                   print("🎵 جاري دمج المؤثرات الصوتية...", flush=True)
-                  # تحميل صوت سينمائي/محيطي (Ambient loop) من ويكيميديا كومنز للحقوق الحرة
-                  os.system('wget -q -O sfx.ogg https://upload.wikimedia.org/wikipedia/commons/6/61/Dark_ambient_loop.ogg')
-                  
+                  try:
+                      # محاولة التحميل الآمن باستخدام requests مع التأكد من حجم الملف
+                      r = requests.get('https://upload.wikimedia.org/wikipedia/commons/6/61/Dark_ambient_loop.ogg', timeout=15)
+                      if r.status_code == 200 and len(r.content) > 1000:
+                          with open("sfx.ogg", "wb") as f:
+                              f.write(r.content)
+                  except Exception as e:
+                      print(f"⚠️ فشل تحميل المؤثر الصوتي، سيتم الاستمرار بدونه: {e}")
+
                   base_aud = AudioFileClip("v_temp.mp3")
-                  if os.path.exists("sfx.ogg"):
-                      sfx = AudioFileClip("sfx.ogg").fx(vfx.volumex, 0.15) # خفض مستوى الموسيقى الخلفية
-                      if sfx.duration < base_aud.duration:
-                          sfx = sfx.fx(vfx.loop, duration=base_aud.duration)
-                      else:
-                          sfx = sfx.subclip(0, base_aud.duration)
-                      final_mix = CompositeAudioClip([base_aud, sfx])
-                      final_mix.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
-                      sfx.close()
-                  else:
-                      os.rename("v_temp.mp3", "v.mp3")
+                  success_sfx = False
+                  
+                  if os.path.exists("sfx.ogg") and os.path.getsize("sfx.ogg") > 1000:
+                      try:
+                          sfx = AudioFileClip("sfx.ogg").fx(vfx.volumex, 0.15)
+                          if sfx.duration < base_aud.duration:
+                              sfx = sfx.fx(vfx.loop, duration=base_aud.duration)
+                          else:
+                              sfx = sfx.subclip(0, base_aud.duration)
+                          final_mix = CompositeAudioClip([base_aud, sfx])
+                          final_mix.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                          sfx.close()
+                          success_sfx = True
+                      except Exception as e:
+                          print(f"⚠️ خطأ أثناء معالجة ملف المؤثر الصوتي: {e}")
                   
                   base_aud.close()
+                  
+                  # إذا فشل الدمج أو فشل التحميل، نستخدم الصوت الأساسي فقط
+                  if not success_sfx:
+                      os.rename("v_temp.mp3", "v.mp3")
+                  else:
+                      if os.path.exists("v_temp.mp3"):
+                          os.remove("v_temp.mp3")
+                          
                   return True
               return False
 
@@ -286,17 +300,14 @@ jobs:
                   
                   aud = AudioFileClip("v.mp3")
                   
-                  # إنشاء واجهة الرسوميات والنصوص (بدقة 480p)
                   img = Image.new('RGBA', (854, 480), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   
-                  # اللوجو
                   try: font = ImageFont.truetype("Roboto-Bold.ttf", 45)
                   except: font = ImageFont.load_default()
                   draw.text((20, 20), "MegoDrama", font=font, fill=(0, 255, 255, 255))
                   draw.line((20, 75, 270, 75), fill=(255, 255, 255, 255), width=3)
                   
-                  # نص التنويه باللغة الإنجليزية
                   try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 15)
                   except: small_font = ImageFont.load_default()
                   disclaimer = "This game is for entertainment purposes only and complies with YouTube policies."
@@ -304,10 +315,8 @@ jobs:
                   
                   img.save("overlay.png")
 
-                  # تجهيز الموجات الصوتية
                   os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x100:colors=0x00FFFF:mode=cline,crop=400:50:0:50,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
-                  # تسجيل فيديو اللعبة كخلفية أو استخدام الصورة بديلة
                   bg_vid_file = record_live_game(aud.duration)
                   if bg_vid_file:
                       base = VideoFileClip(bg_vid_file).without_audio().resize(height=480)
@@ -324,14 +333,11 @@ jobs:
                       waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((20, 85)).set_opacity(0.9)
                       final_vid = CompositeVideoClip([base, overlay, waves]).set_audio(aud)
                       
-                      # دقة 480p ومعدل 40 فريم حسب الطلب
                       final_vid.write_videofile("out.mp4", fps=40, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
                   if os.path.exists("out.mp4"):
-                      # 1. الرفع على Catbox
                       upload_to_catbox("out.mp4")
 
-                      # 2. الرفع على يوتيوب
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
                           print("📤 جاري الرفع إلى يوتيوب...", flush=True)
                           try:
@@ -352,7 +358,6 @@ jobs:
                       else:
                           print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على إعدادات ENABLE_YOUTUBE_UPLOAD (القيمة 0).")
 
-                      # تسجيل المسلسل في السجل
                       with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                           f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
                   
