@@ -37,12 +37,12 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg -q
           
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts -q
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts yt-dlp -q
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           cat << 'EOF' > script.py
-          import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random
+          import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
           import nest_asyncio
           import g4f
           from bs4 import BeautifulSoup
@@ -70,45 +70,135 @@ jobs:
 
           HISTORY_FILE = "shows_history.txt"
 
-          # إعدادات الأصوات
+          # ---------------- الإعدادات ---------------- #
+          ENABLE_YOUTUBE_UPLOAD = 0 # 0 لإيقاف الرفع لليوتيوب، 1 للتشغيل
           VOICE_MALE = "ar-EG-ShakirNeural"
           VOICE_FEMALE = "ar-EG-SalmaNeural"
+          BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
+          
+          SITES_CONFIG = [
+              {"name": "ReelShort", "url": "https://www.reelshort.com/ar", "base": "https://www.reelshort.com"},
+              {"name": "DramaBox", "url": "https://www.dramabox.com/ar", "base": "https://www.dramabox.com"},
+              {"name": "FlexTV", "url": "https://flextv.cc/ar", "base": "https://flextv.cc"},
+              {"name": "ShortTV", "url": "https://www.shorttv.live/ar", "base": "https://www.shorttv.live"}
+          ]
+          # ------------------------------------------- #
+
+          def is_valid_image(url, alt_text):
+              url_lower = url.lower()
+              alt_lower = alt_text.lower()
+              if any(word in url_lower or word in alt_lower for word in BAD_KEYWORDS):
+                  return False
+              if "icon" in url_lower or "logo" in url_lower:
+                  return False
+              return True
 
           def get_data():
-              print("🔍 جاري جلب البيانات من المصدر...", flush=True)
+              print("🔍 جاري فحص المنصات لجلب مسلسل جديد...", flush=True)
               history = []
               if os.path.exists(HISTORY_FILE):
                   with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                       for line in f:
                           if "|" in line: history.append(line.split("|")[0].strip())
-              base = "https://www.shorttv.live"
+              
+              random.shuffle(SITES_CONFIG)
+              headers = {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                  "Accept-Language": "ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+              }
+
+              for site in SITES_CONFIG:
+                  print(f"🔎 جاري فحص موقع: {site['name']}...", flush=True)
+                  try:
+                      response = requests.get(site['url'], headers=headers, timeout=25, verify=False)
+                      if response.status_code != 200: continue
+
+                      soup = BeautifulSoup(response.text, 'html.parser')
+                      found_shows = []
+
+                      scripts = soup.find_all('script')
+                      for script in scripts:
+                          if not script.string: continue
+                          json_matches = re.findall(r'\{"id":.*?"title":"([^"]+)".*?"(?:cover|poster|image)":"([^"]+)"', script.string)
+                          
+                          for m_title, m_img in json_matches:
+                              clean_title = m_title.encode().decode('unicode-escape').strip() if '\\u' in m_title else m_title.strip()
+                              clean_title = re.sub(r'[a-zA-Z0-9]', '', clean_title).strip()
+                              
+                              if len(clean_title) > 3 and clean_title not in history:
+                                  if is_valid_image(m_img, clean_title) and m_img.startswith('http'):
+                                      found_shows.append({"title": clean_title, "image": m_img, "desc": f"دراما واقعية ومشوقة من منصة {site['name']}"})
+
+                      if not found_shows:
+                          for img in soup.find_all('img', alt=True):
+                              raw_alt = img.get('alt', '').strip()
+                              title = re.sub(r'[a-zA-Z0-9]', '', raw_alt).strip()
+                              
+                              if len(title) > 3 and title not in history:
+                                  img_url = img.get('data-src') or img.get('data-original') or img.get('src') or img.get('srcset')
+                                  if img_url:
+                                      img_url = img_url.split(' ')[0] 
+                                      if img_url.startswith('//'): img_url = "https:" + img_url
+                                      if not img_url.startswith('http'): img_url = site['base'] + img_url
+                                      
+                                      if is_valid_image(img_url, raw_alt) and "base64" not in img_url:
+                                          found_shows.append({"title": title, "image": img_url, "desc": f"دراما واقعية ومشوقة من منصة {site['name']}"})
+
+                      if found_shows:
+                          selected = random.choice(found_shows)
+                          print(f"🎯 تم اختيار مسلسل: '{selected['title']}' من منصة {site['name']}", flush=True)
+                          with open("p.jpg", "wb") as f: f.write(requests.get(selected['image'], headers=headers, verify=False).content)
+                          return {"title": selected['title'], "desc": selected['desc']}
+
+                  except Exception as e:
+                      print(f"⚠️ خطأ في {site['name']}: {e}", flush=True)
+                      continue
+              return None
+
+          def get_game_background():
+              """استخراج جزء عشوائي من بث لعبة الثعبان من قناتك"""
+              print("🎮 جاري جلب فيديو لعبة الثعبان من قناتك كخلفية...", flush=True)
               try:
-                  r = requests.get(f"{base}/ar", headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=10)
-                  soup = BeautifulSoup(r.text, 'html.parser')
-                  links = soup.find_all('a', href=True)
-                  random.shuffle(links)
-                  for a in links:
-                      img = a.find('img')
-                      if not img: continue
-                      title = re.sub(r'[a-zA-Z]', '', img.get('alt', '')).strip()
-                      if len(title) < 5 or title in history: continue
-                      t_url = a['href'] if a['href'].startswith('http') else base + a['href']
-                      s_page = requests.get(t_url, verify=False, timeout=5)
-                      desc_m = BeautifulSoup(s_page.text, 'html.parser').find('meta', attrs={'name': 'description'})
-                      desc = desc_m.get('content', '') if desc_m else "دراما واقعية"
-                      i_url = img.get('src') or img.get('data-src')
-                      if i_url.startswith('//'): i_url = "https:" + i_url
-                      with open("p.jpg", "wb") as f: f.write(requests.get(i_url).content)
-                      return {"title": title, "desc": desc}
-              except: return None
+                  cmd = ['yt-dlp', '--get-id', '--flat-playlist', '--playlist-end', '20', 'https://www.youtube.com/@GoZiLG/streams']
+                  res = subprocess.check_output(cmd, text=True)
+                  video_ids = [vid for vid in res.strip().split('\n') if vid]
+                  
+                  if video_ids:
+                      vid = random.choice(video_ids)
+                      url = f"https://www.youtube.com/watch?v={vid}"
+                      # تحميل جزء مدته 15 دقيقة (بدءاً من الدقيقة 2)
+                      dl_cmd = f'yt-dlp -f "bestvideo[height<=720][ext=mp4]" --download-sections "*00:02:00-00:17:00" {url} -o bg.mp4'
+                      os.system(dl_cmd)
+                      if os.path.exists("bg.mp4"):
+                          print("✅ تم تجهيز خلفية الفيديو بنجاح!")
+                          return "bg.mp4"
+              except Exception as e:
+                  print(f"❌ خطأ أثناء جلب الفيديو من القناة: {e}")
+              return None
+
+          def upload_to_catbox(filepath):
+              print("📤 جاري الرفع إلى Catbox...", flush=True)
+              try:
+                  with open(filepath, 'rb') as f:
+                      response = requests.post(
+                          'https://catbox.moe/user/api.php',
+                          data={'reqtype': 'fileupload'},
+                          files={'fileToUpload': f}
+                      )
+                  if response.status_code == 200:
+                      print(f"✅ تم الرفع على Catbox بنجاح، الرابط: {response.text}")
+                  else:
+                      print(f"❌ فشل الرفع على Catbox، كود الخطأ: {response.status_code}")
+              except Exception as e:
+                  print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
           def create_long_script(t, d):
-              print(f"🤖 جاري تأليف سيناريو ملحمي مطول لمسلسل {t}...", flush=True)
+              print(f"🤖 جاري تأليف سيناريو ملحمي لمسلسل {t}...", flush=True)
               full_script = ""
               current_word_count = 0
-              target_word_count = 2100 # الشرط الإجباري
-              
+              target_word_count = 2100 
               iteration = 1
+              
               while current_word_count < target_word_count and iteration < 10:
                   if iteration == 1:
                       prompt = (f"اكتب الجزء الأول من حوار درامي طويل جداً بين بطل وبطلة لمسلسل '{t}' بناءً على: {d}. "
@@ -120,27 +210,21 @@ jobs:
                                 f"آخر ما حدث هو: {full_script[-200:]}. "
                                 "استمر في سرد أحداث المسلسل الحقيقية من خلال الحوار المباشر بين البطل والبطلة فقط. "
                                 "ممنوع الراوي، ممنوع الرموز، ممنوع النجوم ***. اكتب 500 كلمة إضافية.")
-
                   try:
                       response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                      # تنظيف النص من النجوم والرموز فوراً
                       clean_chunk = re.sub(r'[*#_\\-]', '', response).strip()
                       full_script += "\n" + clean_chunk
                       current_word_count = len(full_script.split())
-                      print(f"   -> تم توليد {current_word_count} كلمة حتى الآن...", flush=True)
+                      print(f"   -> تم توليد {current_word_count} كلمة...", flush=True)
                       iteration += 1
                       time.sleep(2)
                   except: break
-              
               return full_script.strip()
 
           async def process_audio(script):
-              print("🎙️ معالجة الأصوات (تفاعل حي بناءً على المشاعر)...", flush=True)
-              # التقاط الوسوم مع النص
+              print("🎙️ معالجة الأصوات...", flush=True)
               segments = re.findall(r'\[(MALE|FEMALE|HOOK)\](.*?)(?=\[(?:MALE|FEMALE|HOOK)\]|$)', script, re.DOTALL)
               clips = []
-              
-              # قواميس التفاعل
               fast_keys = ['بغضب', 'بصراخ', 'بسرعة', 'خيانة', 'مستحيل', 'يكفي', 'أكرهك', 'صدمة']
               slow_keys = ['ندم', 'هدوء', 'حزن', 'لماذا', 'بهدوء', 'آسف', 'ببكاء']
               joy_keys = ['بفرح', 'بضحك', 'سعادة', 'بابتسامة']
@@ -149,20 +233,17 @@ jobs:
                   text = text.strip()
                   if len(text) < 2: continue
                   
-                  # تحديد نبرة التفاعل
                   rate = "+28%" if any(w in text for w in fast_keys) else ("-8%" if any(w in text for w in slow_keys) else ("+15%" if any(w in text for w in joy_keys) else "+4%"))
-                  
                   voice = VOICE_MALE if role in ["MALE", "HOOK"] and i % 2 == 0 else VOICE_FEMALE
                   if role == "FEMALE": voice = VOICE_FEMALE
                   
-                  # تنظيف النص النهائي للنطق
                   clean_text = re.sub(r'\(.*?\)', '', text).strip()
                   fname = f"s_{i}.mp3"
                   try:
                       await edge_tts.Communicate(clean_text, voice, rate=rate).save(fname)
                       c = AudioFileClip(fname)
                       clips.append(c)
-                      clips.append(c.volumex(0).set_duration(0.3)) # وقفة طبيعية
+                      clips.append(c.volumex(0).set_duration(0.3)) 
                   except: continue
 
               if clips:
@@ -180,8 +261,7 @@ jobs:
               if len(script.split()) < 100: return
               
               if await process_audio(script):
-                  print("🎬 المونتاج السينمائي النهائي لـ MegoDrama...", flush=True)
-                  # 1. اللوجو والخط
+                  print("🎬 بدء المونتاج السينمائي...", flush=True)
                   img = Image.new('RGBA', (500, 150), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: font = ImageFont.truetype("Roboto-Bold.ttf", 65)
@@ -190,11 +270,21 @@ jobs:
                   draw.line((10, 95, 420, 95), fill=(255, 255, 255, 255), width=5)
                   img.save("logo.png")
 
-                  # 2. الموجات
                   os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=500x120:colors=0x00FFFF:mode=cline,crop=500:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
                   aud = AudioFileClip("v.mp3")
-                  base = ImageClip("p.jpg").resize(height=720).set_duration(aud.duration)
+                  
+                  # تركيب الفيديو كخلفية
+                  bg_vid_file = get_game_background()
+                  if bg_vid_file:
+                      base = VideoFileClip(bg_vid_file).without_audio().resize(height=720)
+                      if base.duration < aud.duration:
+                          base = base.fx(vfx.loop, duration=aud.duration)
+                      else:
+                          base = base.subclip(0, aud.duration)
+                  else:
+                      base = ImageClip("p.jpg").resize(height=720).set_duration(aud.duration)
+
                   logo = ImageClip("logo.png").set_duration(aud.duration).set_position((40, 40))
                   
                   if os.path.exists("temp_waves.mp4"):
@@ -202,24 +292,34 @@ jobs:
                       final_vid = CompositeVideoClip([base, logo, waves]).set_audio(aud)
                       final_vid.write_videofile("out.mp4", fps=10, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
-                  if os.path.exists("out.mp4") and 'YOUTUBE_CREDENTIALS' in os.environ:
-                      print("📤 جاري الرفع إلى يوتيوب...", flush=True)
-                      try:
-                          creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
-                          youtube = build('youtube', 'v3', credentials=creds)
-                          body = {
-                              'snippet': {
-                                  'title': f"مواجهة نارية في مسلسل {data['title']} | القصة كاملة",
-                                  'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بدون راوي.\nإنتاج: MegoDrama",
-                                  'categoryId': '24'
-                              },
-                              'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
-                          }
-                          youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True)).execute()
-                          with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                              f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
-                          print("✅ تم الإنتاج والرفع بنجاح!")
-                      except Exception as e: print(f"❌ فشل الرفع: {e}")
+                  if os.path.exists("out.mp4"):
+                      # 1. الرفع على Catbox
+                      upload_to_catbox("out.mp4")
+
+                      # 2. الرفع على يوتيوب (بناءً على المتغير)
+                      if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
+                          print("📤 جاري الرفع إلى يوتيوب...", flush=True)
+                          try:
+                              creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
+                              youtube = build('youtube', 'v3', credentials=creds)
+                              body = {
+                                  'snippet': {
+                                      'title': f"مواجهة نارية في مسلسل {data['title']} | القصة كاملة",
+                                      'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بدون راوي.\nإنتاج: MegoDrama",
+                                      'categoryId': '24'
+                                  },
+                                  'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                              }
+                              youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True)).execute()
+                              print("✅ تم الرفع على يوتيوب بنجاح!")
+                          except Exception as e: 
+                              print(f"❌ فشل الرفع لليوتيوب: {e}")
+                      else:
+                          print("⏸️ تم تجاوز الرفع لليوتيوب بناءً على إعدادات ENABLE_YOUTUBE_UPLOAD")
+
+                      # تسجيل المسلسل في السجل
+                      with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                          f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
                   
                   aud.close()
                   base.close()
