@@ -34,12 +34,11 @@ jobs:
         env:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
+          # تثبيت الحزم الأساسية لتسجيل الشاشة الوهمية (المتصفح + Xvfb)
           sudo apt-get update -q
-          sudo apt-get install -y ffmpeg -q
+          sudo apt-get install -y ffmpeg xvfb chromium-browser -q
           
-          # تثبيت أحدث إصدار من yt-dlp لتجاوز الحماية
           pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts -q
-          pip install -U --pre yt-dlp -q
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
@@ -57,7 +56,7 @@ jobs:
           if not hasattr(PIL.Image, 'ANTIALIAS'):
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-          from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_audioclips
+          from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_audioclips, CompositeAudioClip
           import moviepy.video.fx.all as vfx
           from datetime import datetime
           from google.oauth2.credentials import Credentials
@@ -157,26 +156,37 @@ jobs:
                       continue
               return None
 
-          def get_game_background():
-              """استخراج جزء عشوائي من بث لعبة الثعبان من قناتك بتجاوز الحماية"""
-              print("🎮 جاري جلب فيديو لعبة الثعبان من قناتك كخلفية...", flush=True)
+          def record_live_game(duration):
+              """تشغيل متصفح وهمي وتسجيل اللعبة مباشرة من الرابط"""
+              print(f"🎮 جاري بدء المتصفح وتسجيل اللعبة لمدة {int(duration)} ثانية (بدقة 480p و 40FPS)...", flush=True)
               try:
-                  cmd = ['yt-dlp', '--get-id', '--flat-playlist', '--playlist-end', '15', 'https://www.youtube.com/@GoZiLG/streams']
-                  res = subprocess.check_output(cmd, text=True)
-                  video_ids = [vid for vid in res.strip().split('\n') if vid]
+                  # تجهيز شاشة وهمية Xvfb بأبعاد 854x480
+                  os.environ['DISPLAY'] = ':99'
+                  xvfb = subprocess.Popen(['Xvfb', ':99', '-screen', '0', '854x480x24'])
+                  time.sleep(3)
                   
-                  if video_ids:
-                      vid = random.choice(video_ids)
-                      url = f"https://www.youtube.com/watch?v={vid}"
-                      # تم إضافة ios client لتجاوز الحظر وتقليل وقت التحميل إلى دقيقتين فقط لأن السيناريو قصير
-                      dl_cmd = f'yt-dlp --extractor-args "youtube:player_client=ios" --force-ipv4 -f "bestvideo[height<=720][ext=mp4]/best[ext=mp4]" --download-sections "*00:02:00-00:04:00" {url} -o bg.mp4'
-                      os.system(dl_cmd)
-                      if os.path.exists("bg.mp4"):
-                          print("✅ تم تجهيز خلفية الفيديو بنجاح!")
-                          return "bg.mp4"
+                  # فتح المتصفح بوضع الـ Kiosk للعب التلقائي
+                  chrome = subprocess.Popen([
+                      'chromium-browser', 
+                      '--kiosk', '--window-size=854,480', 
+                      '--no-sandbox', '--disable-gpu', 
+                      '--autoplay-policy=no-user-gesture-required', 
+                      'https://meja.do.am/asd/GoZiLG.html'
+                  ])
+                  time.sleep(5) # انتظار تحميل اللعبة
+                  
+                  # تصوير الشاشة الوهمية باستخدام FFmpeg
+                  rec_duration = int(duration) + 2
+                  os.system(f'ffmpeg -y -video_size 854x480 -framerate 40 -f x11grab -i :99.0+0,0 -t {rec_duration} -c:v libx264 -preset veryfast -pix_fmt yuv420p bg.mp4 -loglevel quiet')
+                  
+                  chrome.terminate()
+                  xvfb.terminate()
+                  
+                  if os.path.exists("bg.mp4"):
+                      print("✅ تم تسجيل خلفية الفيديو بنجاح!")
+                      return "bg.mp4"
               except Exception as e:
-                  print(f"❌ خطأ أثناء جلب الفيديو من القناة: {e}")
-              print("⚠️ فشل جلب الفيديو، سيتم استخدام الصورة كخلفية بديلة.")
+                  print(f"❌ خطأ أثناء تسجيل المتصفح: {e}")
               return None
 
           def upload_to_catbox(filepath):
@@ -237,8 +247,28 @@ jobs:
 
               if clips:
                   final_aud = concatenate_audioclips(clips)
-                  final_aud.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                  final_aud.write_audiofile("v_temp.mp3", fps=44100, verbose=False, logger=None)
                   for c in clips: c.close()
+                  
+                  # ---------------- إضافة المؤثر الصوتي ---------------- #
+                  print("🎵 جاري دمج المؤثرات الصوتية...", flush=True)
+                  # تحميل صوت سينمائي/محيطي (Ambient loop) من ويكيميديا كومنز للحقوق الحرة
+                  os.system('wget -q -O sfx.ogg https://upload.wikimedia.org/wikipedia/commons/6/61/Dark_ambient_loop.ogg')
+                  
+                  base_aud = AudioFileClip("v_temp.mp3")
+                  if os.path.exists("sfx.ogg"):
+                      sfx = AudioFileClip("sfx.ogg").fx(vfx.volumex, 0.15) # خفض مستوى الموسيقى الخلفية
+                      if sfx.duration < base_aud.duration:
+                          sfx = sfx.fx(vfx.loop, duration=base_aud.duration)
+                      else:
+                          sfx = sfx.subclip(0, base_aud.duration)
+                      final_mix = CompositeAudioClip([base_aud, sfx])
+                      final_mix.write_audiofile("v.mp3", fps=44100, verbose=False, logger=None)
+                      sfx.close()
+                  else:
+                      os.rename("v_temp.mp3", "v.mp3")
+                  
+                  base_aud.close()
                   return True
               return False
 
@@ -253,41 +283,55 @@ jobs:
               
               if await process_audio(script):
                   print("🎬 بدء المونتاج السينمائي...", flush=True)
-                  img = Image.new('RGBA', (500, 150), (0, 0, 0, 0))
-                  draw = ImageDraw.Draw(img)
-                  try: font = ImageFont.truetype("Roboto-Bold.ttf", 65)
-                  except: font = ImageFont.load_default()
-                  draw.text((10, 10), "MegoDrama", font=font, fill=(0, 255, 255, 255))
-                  draw.line((10, 95, 420, 95), fill=(255, 255, 255, 255), width=5)
-                  img.save("logo.png")
-
-                  os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=500x120:colors=0x00FFFF:mode=cline,crop=500:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
-
+                  
                   aud = AudioFileClip("v.mp3")
                   
-                  # تركيب الفيديو كخلفية (الثعبان) أو الصورة كخلفية بديلة
-                  bg_vid_file = get_game_background()
+                  # إنشاء واجهة الرسوميات والنصوص (بدقة 480p)
+                  img = Image.new('RGBA', (854, 480), (0, 0, 0, 0))
+                  draw = ImageDraw.Draw(img)
+                  
+                  # اللوجو
+                  try: font = ImageFont.truetype("Roboto-Bold.ttf", 45)
+                  except: font = ImageFont.load_default()
+                  draw.text((20, 20), "MegoDrama", font=font, fill=(0, 255, 255, 255))
+                  draw.line((20, 75, 270, 75), fill=(255, 255, 255, 255), width=3)
+                  
+                  # نص التنويه باللغة الإنجليزية
+                  try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 15)
+                  except: small_font = ImageFont.load_default()
+                  disclaimer = "This game is for entertainment purposes only and complies with YouTube policies."
+                  draw.text((20, 440), disclaimer, font=small_font, fill=(255, 255, 255, 200))
+                  
+                  img.save("overlay.png")
+
+                  # تجهيز الموجات الصوتية
+                  os.system('ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x100:colors=0x00FFFF:mode=cline,crop=400:50:0:50,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
+
+                  # تسجيل فيديو اللعبة كخلفية أو استخدام الصورة بديلة
+                  bg_vid_file = record_live_game(aud.duration)
                   if bg_vid_file:
-                      base = VideoFileClip(bg_vid_file).without_audio().resize(height=720)
+                      base = VideoFileClip(bg_vid_file).without_audio().resize(height=480)
                       if base.duration < aud.duration:
                           base = base.fx(vfx.loop, duration=aud.duration)
                       else:
                           base = base.subclip(0, aud.duration)
                   else:
-                      base = ImageClip("p.jpg").resize(height=720).set_duration(aud.duration)
+                      base = ImageClip("p.jpg").resize(height=480).set_duration(aud.duration)
 
-                  logo = ImageClip("logo.png").set_duration(aud.duration).set_position((40, 40))
+                  overlay = ImageClip("overlay.png").set_duration(aud.duration)
                   
                   if os.path.exists("temp_waves.mp4"):
-                      waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((40, 135)).set_opacity(0.9)
-                      final_vid = CompositeVideoClip([base, logo, waves]).set_audio(aud)
-                      final_vid.write_videofile("out.mp4", fps=10, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                      waves = VideoFileClip("temp_waves.mp4").fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((20, 85)).set_opacity(0.9)
+                      final_vid = CompositeVideoClip([base, overlay, waves]).set_audio(aud)
+                      
+                      # دقة 480p ومعدل 40 فريم حسب الطلب
+                      final_vid.write_videofile("out.mp4", fps=40, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
                   if os.path.exists("out.mp4"):
                       # 1. الرفع على Catbox
                       upload_to_catbox("out.mp4")
 
-                      # 2. الرفع على يوتيوب (بناءً على المتغير)
+                      # 2. الرفع على يوتيوب
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
                           print("📤 جاري الرفع إلى يوتيوب...", flush=True)
                           try:
@@ -296,7 +340,7 @@ jobs:
                               body = {
                                   'snippet': {
                                       'title': f"مواجهة نارية في مسلسل {data['title']} | القصة كاملة",
-                                      'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بدون راوي.\nإنتاج: MegoDrama",
+                                      'description': f"شاهد الأحداث الحقيقية لمسلسل {data['title']} بدون راوي.\nThis game is for entertainment purposes only and complies with YouTube policies.\nإنتاج: MegoDrama",
                                       'categoryId': '24'
                                   },
                                   'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
@@ -314,7 +358,7 @@ jobs:
                   
                   aud.close()
                   base.close()
-                  logo.close()
+                  overlay.close()
 
           if __name__ == "__main__":
               asyncio.run(start_production())
