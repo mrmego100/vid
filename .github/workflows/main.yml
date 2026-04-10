@@ -68,6 +68,7 @@ jobs:
 
           from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_audioclips, CompositeAudioClip
           import moviepy.video.fx.all as vfx
+          import moviepy.audio.fx.all as afx
           from datetime import datetime
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
@@ -290,7 +291,7 @@ jobs:
                           
                       # دمج صوت اللعبة مع التعليق (التعليق 100% واللعبة 30%)
                       if base.audio is not None:
-                          game_audio = base.audio.fx(vfx.volumex, 0.3)
+                          game_audio = base.audio.fx(afx.volumex, 0.3)
                           final_audio = CompositeAudioClip([game_audio.set_duration(aud.duration), aud.set_position(0)])
                           base = base.set_audio(final_audio)
                       else:
