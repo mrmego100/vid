@@ -83,11 +83,11 @@ jobs:
           HISTORY_FILE = "shows_history.txt"
 
           # ---------------- الإعدادات ---------------- #
-          ENABLE_YOUTUBE_UPLOAD = 0 # 0 لإيقاف الرفع، 1 للتشغيل
+          ENABLE_YOUTUBE_UPLOAD = 1 # 0 لإيقاف الرفع، 1 للتشغيل
           VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
           VID_WIDTH = 1280  # العرض
           VID_HEIGHT = 1400 # الطول
-          VID_FPS = 40      # معدل الإطارات
+          VID_FPS = 50      # معدل الإطارات
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
           SITES_CONFIG = [
@@ -224,11 +224,13 @@ jobs:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
           def create_narrative_script(t, d):
-              print(f"🤖 جاري تأليف قصة سردية قوية (100-200 كلمة) لمسلسل {t}...", flush=True)
-              prompt = (f"اكتب قصة سردية (يتراوح طولها بين 100 إلى 200 كلمة) تروي أحداث مسلسل '{t}' بناءً على: {d}. "
+              print(f"🤖 جاري تأليف قصة سردية طويلة جداً (1500-1700 كلمة) لمسلسل {t}...", flush=True)
+              prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
+                        "شرط إجباري وحاسم: يجب أن يتراوح طول القصة بين 1500 إلى 1700 كلمة بالتمام والكمال. قم بزيادة الوصف وتوسيع الأحداث للوصول لهذا الطول. "
                         "يجب أن تبدأ القصة بـ 'هوك' (Hook) قوي جداً وصادم يخاطب المشاهد مباشرة (بصيغة أنت) لجذب انتباهه من الثواني الأولى. "
-                        "ممنوع تماماً استخدام أسلوب الحوارات أو الردود المتبادلة. السرد يجب أن يكون متصلاً بلسان راوي واحد يحكي الأحداث بإثارة. "
-                        "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين.")
+                        "ممنوع تماماً استخدام أسلوب الحوارات أو الردود المتبادلة. السرد يجب أن يكون متصلاً بلسان راوي واحد يحكي الأحداث بإثارة وتفصيل دقيق. "
+                        "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
+                        "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً'، 'بالتأكيد')، اكتب النص السردي للقصة مباشرة وفقط.")
               try:
                   response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
                   clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
@@ -274,8 +276,8 @@ jobs:
                   
                   img.save("overlay.png")
 
-                  # تصميم الموجات الصوتية
-                  os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=600x120:colors=0x00FFFF:mode=cline,crop=600:60:0:60,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
+                  # تصميم الموجات الصوتية بشكل حلو ومتعدد الألوان ومتحرك باستمرار
+                  os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
                   bg_vid_file = record_live_game(aud.duration)
                   
@@ -292,7 +294,6 @@ jobs:
                       # دمج صوت اللعبة مع التعليق (التعليق 100% واللعبة 30%)
                       if base.audio is not None:
                           game_audio = base.audio.fx(afx.volumex, 0.3)
-                          # تم الإصلاح هنا: إزالة set_position لأنها خاصة بالفيديو فقط
                           final_audio = CompositeAudioClip([game_audio.set_duration(aud.duration), aud])
                           base = base.set_audio(final_audio)
                       else:
@@ -306,8 +307,8 @@ jobs:
                   overlay = ImageClip("overlay.png").set_duration(aud.duration)
                   
                   if os.path.exists("temp_waves.mp4"):
-                      # إزالة الصوت من الموجات لتجنب تكرار صوت التعليق
-                      waves = VideoFileClip("temp_waves.mp4").without_audio().fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position(('center', VID_HEIGHT - 220)).set_opacity(0.9)
+                      # إزالة الصوت من الموجات لتجنب تكرار صوت التعليق، ووضعها في أعلى اليمين
+                      waves = VideoFileClip("temp_waves.mp4").without_audio().fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((VID_WIDTH - 430, 40)).set_opacity(0.9)
                       
                       final_vid = CompositeVideoClip([base, overlay, waves])
                       final_vid = final_vid.set_audio(base.audio) # التأكيد النهائي على دمج الصوت الصحيح
