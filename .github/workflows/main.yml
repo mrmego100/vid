@@ -234,7 +234,7 @@ jobs:
               except Exception as e:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
-          # ----- نظام التأليف الذكي مع التبديل التلقائي (Smart Fallback & Retry) -----
+          # ----- نظام التأليف الذكي مع التبديل التلقائي السليم (Smart Fallback & Retry) -----
           def create_narrative_script(t, d):
               print(f"🤖 جاري تأليف قصة سردية ({STORY_MIN_WORDS}-{STORY_MAX_WORDS} كلمة) لمسلسل '{t}'...", flush=True)
               prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
@@ -244,13 +244,13 @@ jobs:
                         "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
                         "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
               
-              # نماذج مختلفة للتبديل بينها لتفادي أخطاء الـ TransferEncodingError
-              models_to_try = [g4f.models.gpt_4, g4f.models.gpt_35_turbo, "gpt-4", "gpt-3.5-turbo"]
+              # حل المشكلة: الاعتماد على النصوص لتعريف الموديلات
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
               
               for attempt in range(5): # 5 محاولات لضمان النجاح
                   model = models_to_try[attempt % len(models_to_try)]
                   try:
-                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو (باستخدام موديل احتياطي إن لزم الأمر)...", flush=True)
+                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو...", flush=True)
                       response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
                       
                       # التحقق من أن الرد يحتوي على نص ومكتمل بشكل معقول
@@ -276,7 +276,7 @@ jobs:
                         f"استخرج حدثاً مشوقاً من هذه القصة: {story_text[:1000]}... "
                         "تحذير صارم جداً: اكتب جملة العنوان فقط لا غير. لا تكتب 'إليك العنوان' ولا تكتب أي شروحات أو مقدمات أو خاتمات. ممنوع استخدام أقواس أو رموز أو اسم المسلسل في العنوان. أريد جملة العنوان فقط.")
               
-              models_to_try = [g4f.models.gpt_4, g4f.models.gpt_35_turbo, "gpt-4"]
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
               for attempt in range(3):
                   model = models_to_try[attempt % len(models_to_try)]
                   try:
@@ -297,7 +297,7 @@ jobs:
                         "2. أضف الكلمات المفتاحية: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة ومتفرقة بشكل طبيعي ومندمج في السياق، لا تضعها بجانب بعضها أو في أقواس. "
                         "3. تحذير صارم جداً: اكتب نص الوصف للقصة فقط لا غير. ممنوع كتابة أي مقدمات أو ردود حوارية مثل 'بالتأكيد' أو 'تفضل الوصف'. ممنوع استخدام النجوم (**) أو الأقواس للتحديد.")
               
-              models_to_try = [g4f.models.gpt_4, g4f.models.gpt_35_turbo, "gpt-4"]
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
               for attempt in range(3):
                   model = models_to_try[attempt % len(models_to_try)]
                   try:
