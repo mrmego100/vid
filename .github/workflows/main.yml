@@ -98,8 +98,8 @@ jobs:
           VID_FPS = 60      # معدل الإطارات
           
           # --- إعدادات كلمات السكربت --- #
-          STORY_MIN_WORDS = 500  # الحد الأدنى لعدد كلمات القصة
-          STORY_MAX_WORDS = 600  # الحد الأقصى لعدد كلمات القصة
+          STORY_MIN_WORDS = 2000  # الحد الأدنى لعدد كلمات القصة
+          STORY_MAX_WORDS = 2500  # الحد الأقصى لعدد كلمات القصة
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
