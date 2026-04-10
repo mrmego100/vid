@@ -35,10 +35,10 @@ jobs:
           YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
           sudo apt-get update -q
-          # تثبيت أدوات التسجيل والخطوط الأساسية لضمان عدم انهيار البيئة
-          sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra fonts-roboto curl -q
+          # تثبيت أدوات التسجيل والخطوط
+          sudo apt-get install -y ffmpeg xvfb chromium-browser pulseaudio fonts-noto-core fonts-noto-extra curl -q
           
-          # استبدال wget بـ curl لتفادي خطأ Exit Code 8 المزعج وإضافة || true لتجاهل الانهيار
+          # إعداد الخط العربي كما طلبت بالضبط
           curl -sL "https://raw.githubusercontent.com/google/fonts/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
           sudo mkdir -p /usr/share/fonts/truetype/custom
           sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
@@ -50,13 +50,12 @@ jobs:
           pacmd set-default-sink v1 || true
           pacmd set-default-source v1.monitor || true
           
-          # إضافة مكتبات دعم اللغة العربية في الصور (arabic-reshaper, python-bidi)
+          # تثبيت المكتبات (مع إضافة arabic-reshaper و python-bidi للصورة المصغرة)
           for i in {1..5}; do
             pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
           done
           
-          # تحميل خط Roboto بـ curl أيضاً لتجنب الخطأ
-          curl -sL "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Bold.ttf" -o Roboto-Bold.ttf || true
+          wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
@@ -352,53 +351,48 @@ jobs:
                   Image.new('RGB', (1280, 720), color="black").save("thumbnail.jpg")
                   return "thumbnail.jpg"
 
-          # ----- نظام معالجة الصوت واستخراج الترجمة (ASS) -----
+          # ----- نظام الترجمة المستقل تماماً (بناءً على طلبك وبالخط المطلوب) -----
           async def process_audio_and_subs(script):
               if not script: return False
-              print("🎙️ معالجة الصوت وبناء ملف الترجمة ASS...", flush=True)
+              print("🎙️ معالجة الصوت وبناء ملف الترجمة ASS يدوياً...", flush=True)
               try:
                   communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="+4%")
-                  submaker = edge_tts.SubMaker()
+                  word_boundaries = []
                   
                   with open("v.mp3", "wb") as file:
                       async for chunk in communicate.stream():
                           if chunk["type"] == "audio":
                               file.write(chunk["data"])
                           elif chunk["type"] == "WordBoundary":
-                              submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
+                              word_boundaries.append(chunk)
                   
-                  # إنشاء ملف ASS بالتنسيق المطلوب
+                  # إعداد رأس ملف الـ ASS بالستايل اللي طلبته بالضبط
                   ass_header = """[Script Info]
           ScriptType: v4.00+
 
           [V4+ Styles]
           Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-          Style: Default,Noto Naskh Arabic,48,&H00FFFFFF,&H00000000,1,0,1,3,0,2,20,20,50,1
+          Style: Default,Noto Naskh Arabic,64,&H00FFFFFF,&H00000000,0,0,1,3,0,2,20,20,20,1
 
           [Events]
           Format: Layer, Start, End, Style, Text
           """
                   ass_lines = []
-                  vtt_text = submaker.generate_subs()
-                  blocks = vtt_text.split('\n\n')
                   
-                  def to_ass_time(t):
-                      parts = t.split(':')
-                      if len(parts) == 3:
-                          h, m, s_ms = parts
-                          s, ms = s_ms.split('.') if '.' in s_ms else (s_ms, "000")
-                          return f"{int(h)}:{int(m):02d}:{int(s):02d}.{ms[:2]}"
-                      return "0:00:00.00"
+                  def format_ass_time(seconds):
+                      h = int(seconds // 3600)
+                      m = int((seconds % 3600) // 60)
+                      s = seconds % 60
+                      return f"{h}:{m:02d}:{s:05.2f}"
 
-                  for block in blocks:
-                      lines = block.split('\n')
-                      if len(lines) >= 2 and '-->' in lines[0]:
-                          times = lines[0].split(' --> ')
-                          start_ass = to_ass_time(times[0].strip())
-                          end_ass = to_ass_time(times[1].strip())
-                          text_line = " ".join(lines[1:]).strip()
-                          if text_line:
-                              ass_lines.append(f"Dialogue: 0,{start_ass},{end_ass},Default,{text_line}")
+                  # تجميع الكلمات لعمل سطور (كل 6 كلمات في سطر)
+                  words_per_line = 6
+                  for i in range(0, len(word_boundaries), words_per_line):
+                      group = word_boundaries[i:i+words_per_line]
+                      start_time = group[0]["offset"] / 10000000
+                      end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
+                      text = " ".join([w["text"] for w in group])
+                      ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{text}")
 
                   with open("subs.ass", "w", encoding="utf-8") as f:
                       f.write(ass_header + "\n".join(ass_lines))
@@ -422,7 +416,6 @@ jobs:
                   
                   aud = AudioFileClip("v.mp3")
                   
-                  # إنشاء واجهة الرسوميات بدون أي أسماء (MegoDrama محذوفة)
                   img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
@@ -431,7 +424,6 @@ jobs:
                   draw.text((40, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
 
-                  # تصميم الموجات الصوتية بشكل حلو ومتحرك باستمرار
                   os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
 
                   bg_vid_file = record_live_game(aud.duration)
@@ -473,11 +465,10 @@ jobs:
                   base.close()
                   overlay.close()
                   
-                  # ----- دمج ملف الترجمة ASS في الفيديو النهائي -----
+                  # دمج ملف الترجمة ASS في الفيديو النهائي باستخدام إعداداتك بالضبط
                   print("✍️ جاري حرق الترجمة العربية (ASS) على الفيديو...", flush=True)
                   os.system('ffmpeg -y -i temp_out.mp4 -vf "ass=subs.ass" -c:a copy out.mp4 -loglevel quiet')
                   
-                  # في حال فشل حرق الترجمة لأي سبب تقني، نستخدم النسخة بدون ترجمة
                   if not os.path.exists("out.mp4"):
                       os.rename("temp_out.mp4", "out.mp4")
 
