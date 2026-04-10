@@ -37,7 +37,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg -q
           
-          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts yt-dlp -q
+          # تثبيت أحدث إصدار من yt-dlp لتجاوز الحماية
+          pip install requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts -q
+          pip install -U --pre yt-dlp -q
           
           wget -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
@@ -156,24 +158,25 @@ jobs:
               return None
 
           def get_game_background():
-              """استخراج جزء عشوائي من بث لعبة الثعبان من قناتك"""
+              """استخراج جزء عشوائي من بث لعبة الثعبان من قناتك بتجاوز الحماية"""
               print("🎮 جاري جلب فيديو لعبة الثعبان من قناتك كخلفية...", flush=True)
               try:
-                  cmd = ['yt-dlp', '--get-id', '--flat-playlist', '--playlist-end', '20', 'https://www.youtube.com/@GoZiLG/streams']
+                  cmd = ['yt-dlp', '--get-id', '--flat-playlist', '--playlist-end', '15', 'https://www.youtube.com/@GoZiLG/streams']
                   res = subprocess.check_output(cmd, text=True)
                   video_ids = [vid for vid in res.strip().split('\n') if vid]
                   
                   if video_ids:
                       vid = random.choice(video_ids)
                       url = f"https://www.youtube.com/watch?v={vid}"
-                      # تحميل جزء مدته 15 دقيقة (بدءاً من الدقيقة 2)
-                      dl_cmd = f'yt-dlp -f "bestvideo[height<=720][ext=mp4]" --download-sections "*00:02:00-00:17:00" {url} -o bg.mp4'
+                      # تم إضافة ios client لتجاوز الحظر وتقليل وقت التحميل إلى دقيقتين فقط لأن السيناريو قصير
+                      dl_cmd = f'yt-dlp --extractor-args "youtube:player_client=ios" --force-ipv4 -f "bestvideo[height<=720][ext=mp4]/best[ext=mp4]" --download-sections "*00:02:00-00:04:00" {url} -o bg.mp4'
                       os.system(dl_cmd)
                       if os.path.exists("bg.mp4"):
                           print("✅ تم تجهيز خلفية الفيديو بنجاح!")
                           return "bg.mp4"
               except Exception as e:
                   print(f"❌ خطأ أثناء جلب الفيديو من القناة: {e}")
+              print("⚠️ فشل جلب الفيديو، سيتم استخدام الصورة كخلفية بديلة.")
               return None
 
           def upload_to_catbox(filepath):
@@ -193,35 +196,21 @@ jobs:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
           def create_long_script(t, d):
-              print(f"🤖 جاري تأليف سيناريو ملحمي لمسلسل {t}...", flush=True)
-              full_script = ""
-              current_word_count = 0
-              target_word_count = 2100 
-              iteration = 1
-              
-              while current_word_count < target_word_count and iteration < 10:
-                  if iteration == 1:
-                      prompt = (f"اكتب الجزء الأول من حوار درامي طويل جداً بين بطل وبطلة لمسلسل '{t}' بناءً على: {d}. "
-                                "ابدأ بـ [HOOK] صادم ومواجهة نارية. ممنوع وجود راوي تماماً. "
-                                "استخدم فقط [MALE] و [FEMALE]. ممنوع استخدام أي مقدمات أو رموز أو نجوم ***. "
-                                "اكتب حوالي 500 كلمة في هذا الجزء.")
-                  else:
-                      prompt = (f"أكمل الحوار الدرامي السابق لمسلسل '{t}'. "
-                                f"آخر ما حدث هو: {full_script[-200:]}. "
-                                "استمر في سرد أحداث المسلسل الحقيقية من خلال الحوار المباشر بين البطل والبطلة فقط. "
-                                "ممنوع الراوي، ممنوع الرموز، ممنوع النجوم ***. اكتب 500 كلمة إضافية.")
-                  try:
-                      response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
-                      clean_chunk = re.sub(r'[*#_\\-]', '', response).strip()
-                      full_script += "\n" + clean_chunk
-                      current_word_count = len(full_script.split())
-                      print(f"   -> تم توليد {current_word_count} كلمة...", flush=True)
-                      iteration += 1
-                      time.sleep(2)
-                  except: break
-              return full_script.strip()
+              print(f"🤖 جاري تأليف سيناريو قصير (50 كلمة) لمسلسل {t}...", flush=True)
+              prompt = (f"اكتب حوار درامي قصير جداً ومكثف (حوالي 50 كلمة فقط) بين بطل وبطلة لمسلسل '{t}' بناءً على: {d}. "
+                        "ابدأ بـ [HOOK] صادم ومواجهة سريعة. "
+                        "استخدم فقط [MALE] و [FEMALE]. ممنوع وجود راوي أو مقدمات أو رموز أو نجوم ***.")
+              try:
+                  response = g4f.ChatCompletion.create(model=g4f.models.gpt_4, messages=[{"role":"user", "content": prompt}])
+                  clean_chunk = re.sub(r'[*#_\\-]', '', response).strip()
+                  print(f"   -> تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
+                  return clean_chunk
+              except Exception as e: 
+                  print(f"❌ خطأ في توليد السيناريو: {e}")
+                  return ""
 
           async def process_audio(script):
+              if not script: return False
               print("🎙️ معالجة الأصوات...", flush=True)
               segments = re.findall(r'\[(MALE|FEMALE|HOOK)\](.*?)(?=\[(?:MALE|FEMALE|HOOK)\]|$)', script, re.DOTALL)
               clips = []
@@ -258,7 +247,9 @@ jobs:
               if not data: return
               
               script = create_long_script(data['title'], data['desc'])
-              if len(script.split()) < 100: return
+              if len(script.split()) < 10: 
+                  print("⚠️ السيناريو قصير جداً، تم إلغاء العملية.")
+                  return
               
               if await process_audio(script):
                   print("🎬 بدء المونتاج السينمائي...", flush=True)
@@ -274,7 +265,7 @@ jobs:
 
                   aud = AudioFileClip("v.mp3")
                   
-                  # تركيب الفيديو كخلفية
+                  # تركيب الفيديو كخلفية (الثعبان) أو الصورة كخلفية بديلة
                   bg_vid_file = get_game_background()
                   if bg_vid_file:
                       base = VideoFileClip(bg_vid_file).without_audio().resize(height=720)
@@ -315,7 +306,7 @@ jobs:
                           except Exception as e: 
                               print(f"❌ فشل الرفع لليوتيوب: {e}")
                       else:
-                          print("⏸️ تم تجاوز الرفع لليوتيوب بناءً على إعدادات ENABLE_YOUTUBE_UPLOAD")
+                          print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على إعدادات ENABLE_YOUTUBE_UPLOAD (القيمة 0).")
 
                       # تسجيل المسلسل في السجل
                       with open(HISTORY_FILE, "a", encoding="utf-8") as f:
