@@ -36,10 +36,10 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           sudo apt-get update -q
-          # تثبيت أدوات التسجيل والخطوط (تم إزالة المتصفح لتسريع العملية)
+          # تم تنظيف المتطلبات لتسريع العملية (حذفنا كروم وماكينة الشاشة الوهمية)
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
-          # إعداد الخط العربي كما طلبت بالضبط (مُحدث للرابط المضمون)
+          # إعداد الخط العربي
           curl -sL "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
           sudo mkdir -p /usr/share/fonts/truetype/custom
           sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
@@ -56,7 +56,6 @@ jobs:
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
           import nest_asyncio
           import g4f
-          from g4f.Provider import Blackbox, PollinationsAI, DuckDuckGo, ChatGptEs
           from bs4 import BeautifulSoup
           from tqdm import tqdm
           import numpy as np
@@ -69,7 +68,7 @@ jobs:
           if not hasattr(PIL.Image, 'ANTIALIAS'):
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-          from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_videoclips, concatenate_audioclips, CompositeAudioClip
+          from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_videoclips, CompositeAudioClip
           import moviepy.video.fx.all as vfx
           import moviepy.audio.fx.all as afx
           from datetime import datetime
@@ -77,17 +76,11 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
 
-          # إيقاف محاولة قراءة الكوكيز نهائياً
-          try:
-              import g4f.cookies
-              g4f.cookies.browsers = []
-          except:
-              pass
-
           nest_asyncio.apply()
           urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
           warnings.filterwarnings("ignore", category=UserWarning)
           os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+          os.environ["SDL_VIDEODRIVER"] = "dummy"
 
           HISTORY_FILE = "shows_history.txt"
 
@@ -97,11 +90,11 @@ jobs:
           VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
           VID_WIDTH = 1280  # العرض
           VID_HEIGHT = 1400 # الطول
-          VID_FPS = 30      # تقليل لـ 30 لتسريع الرندر مع فيديوهات Pexels
+          VID_FPS = 30      # معدل الإطارات (تم تقليله لـ 30 لسرعة الرندر مع Pexels)
           
           # --- إعدادات كلمات السكربت --- #
-          STORY_MIN_WORDS = 2000
-          STORY_MAX_WORDS = 2500
+          STORY_MIN_WORDS = 2000  # الحد الأدنى لعدد كلمات القصة
+          STORY_MAX_WORDS = 2500  # الحد الأقصى لعدد كلمات القصة
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
@@ -112,9 +105,6 @@ jobs:
               {"name": "ShortTV", "url": "https://www.shorttv.live/ar", "base": "https://www.shorttv.live"}
           ]
           # ------------------------------------------- #
-
-          # قائمة المزودين الآمنين لتخطي مشكلة .har
-          SAFE_PROVIDERS = [PollinationsAI, Blackbox, DuckDuckGo, ChatGptEs]
 
           def is_valid_image(url, alt_text):
               url_lower = url.lower()
@@ -187,55 +177,6 @@ jobs:
                       continue
               return None
 
-          # ----- نظام استخراج الكلمات المفتاحية لمقاطع Pexels -----
-          def get_pexels_keyword(story_text):
-              print("🧠 جاري استخراج كلمة مفتاحية مرئية للقصة لجلب فيديوهات Pexels...", flush=True)
-              prompt = f"Read this drama story: '{story_text[:800]}...'. Provide 1 single English search keyword to find generic stock footage on Pexels that matches the vibe (e.g. 'dark city', 'sad man', 'luxury lifestyle', 'mystery', 'office'). Write only the keyword."
-              for attempt, provider in enumerate(SAFE_PROVIDERS):
-                  try:
-                      res = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
-                      clean_res = re.sub(r'[^a-zA-Z\s]', '', res).strip()
-                      if clean_res and len(clean_res.split()) <= 3:
-                          return clean_res
-                  except:
-                      pass
-              return "cinematic drama"
-
-          # ----- نظام جلب الفيديوهات من Pexels -----
-          def download_pexels_videos(keyword):
-              print(f"📥 جاري البحث عن فيديوهات بخلفية '{keyword}' في Pexels...", flush=True)
-              api_key = os.environ.get("PEXELS_API_KEY", "")
-              if not api_key:
-                  print("⚠️ لا يوجد PEXELS_API_KEY، سيتم تجاوز جلب الفيديوهات.")
-                  return []
-              
-              headers = {"Authorization": api_key}
-              url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=15&orientation=portrait"
-              downloaded = []
-              
-              try:
-                  res = requests.get(url, headers=headers, timeout=20)
-                  if res.status_code == 200:
-                      videos = res.json().get("videos", [])
-                      random.shuffle(videos)
-                      
-                      for i, v in enumerate(videos[:8]): 
-                          files = v.get("video_files", [])
-                          hd_files = [f for f in files if f.get("quality") == "hd"]
-                          best_file = hd_files[0] if hd_files else (files[0] if files else None)
-                          
-                          if best_file:
-                              link = best_file.get("link")
-                              vid_path = f"pexels_{i}.mp4"
-                              print(f"   -> تحميل مقطع {i+1}...")
-                              with open(vid_path, "wb") as f:
-                                  f.write(requests.get(link, timeout=30).content)
-                              downloaded.append(vid_path)
-              except Exception as e:
-                  print(f"❌ خطأ أثناء تحميل فيديوهات Pexels: {e}")
-              
-              return downloaded
-
           def upload_to_catbox(filepath):
               print("📤 جاري الرفع إلى Catbox...", flush=True)
               try:
@@ -252,7 +193,7 @@ jobs:
               except Exception as e:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
-          # ----- نظام التأليف الذكي مع التبديل التلقائي -----
+          # ----- نظام التأليف الذكي مع التبديل التلقائي السليم (Smart Fallback & Retry) -----
           def create_narrative_script(t, d):
               print(f"🤖 جاري تأليف قصة سردية ({STORY_MIN_WORDS}-{STORY_MAX_WORDS} كلمة) لمسلسل '{t}'...", flush=True)
               prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
@@ -262,25 +203,82 @@ jobs:
                         "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
                         "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
               
-              for attempt in range(6):
-                  provider = SAFE_PROVIDERS[attempt % len(SAFE_PROVIDERS)]
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              
+              for attempt in range(5):
+                  model = models_to_try[attempt % len(models_to_try)]
                   try:
-                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو عبر {provider.__name__}...", flush=True)
-                      response = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
+                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو...", flush=True)
+                      response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
                       
                       if response and len(response.split()) > 150: 
                           clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
                           print(f"   -> ✅ تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
                           return clean_chunk
                       else:
-                          print("⚠️ الرد من السيرفر كان غير مكتمل، جاري التبديل لمزود آخر...", flush=True)
+                          print("⚠️ الرد من السيرفر كان غير مكتمل أو قصير جداً، جاري التبديل للمحاولة التالية...", flush=True)
                   except Exception as e: 
-                      print(f"❌ خطأ مع المزود {provider.__name__}: {e}", flush=True)
-                  time.sleep(5)
+                      print(f"❌ خطأ في الاتصال بالذكاء الاصطناعي (المحاولة {attempt + 1}): {e}", flush=True)
+                  
+                  time.sleep(7)
               
               return ""
 
-          # ----- توليد عنوان اليوتيوب -----
+          # ----- جلب فيديوهات من Pexels -----
+          def generate_video_keywords(story_text):
+              print("🔍 استخراج كلمات مفتاحية للبحث عن مشاهد الفيديو...", flush=True)
+              prompt = (f"Analyze this story and provide exactly 5 English keywords or short phrases "
+                        f"(e.g., 'sad man', 'running', 'dark city', 'arguing', 'dramatic'). "
+                        f"These will be used to search for stock videos. Return ONLY the English keywords separated by commas. "
+                        f"Story: {story_text[:800]}...")
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              for attempt in range(3):
+                  try:
+                      model = models_to_try[attempt % len(models_to_try)]
+                      raw_keys = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      clean_keys = [k.strip() for k in raw_keys.replace('.', '').replace('"', '').split(',') if k.strip()]
+                      if len(clean_keys) >= 3:
+                          return clean_keys[:5]
+                  except:
+                      time.sleep(3)
+              return ["drama", "suspense", "people", "action", "cinematic"]
+
+          def fetch_pexels_videos(keywords):
+              print("🎥 جاري تحميل مقاطع فيديو مجانية من Pexels...", flush=True)
+              api_key = os.environ.get('PEXELS_API_KEY')
+              if not api_key:
+                  print("⚠️ تنبيه: لم يتم العثور على PEXELS_API_KEY. يرجى إضافته في إعدادات Secrets.")
+                  return []
+              
+              headers = {"Authorization": api_key}
+              downloaded = []
+              
+              for idx, kw in enumerate(keywords):
+                  print(f"  -> البحث عن: {kw}")
+                  url = f"https://api.pexels.com/videos/search?query={kw}&per_page=5&orientation=portrait"
+                  try:
+                      res = requests.get(url, headers=headers, timeout=15).json()
+                      if 'videos' in res and res['videos']:
+                          video = random.choice(res['videos'][:3])
+                          video_files = sorted(video['video_files'], key=lambda x: x['width'], reverse=True)
+                          link = None
+                          for vf in video_files:
+                              if vf['width'] >= 720: 
+                                  link = vf['link']
+                                  break
+                          if not link: link = video_files[0]['link']
+                          
+                          print(f"  -> جاري التحميل لمشهد {kw}...")
+                          v_data = requests.get(link, timeout=30).content
+                          fname = f"scene_{idx}.mp4"
+                          with open(fname, "wb") as f:
+                              f.write(v_data)
+                          downloaded.append(fname)
+                  except Exception as e:
+                      print(f"❌ خطأ أثناء تحميل مقطع لـ '{kw}': {e}")
+              return downloaded
+
+          # ----- توليد عنوان اليوتيوب المضاد للانهيار مع نظام ذكي للتبديل -----
           def generate_youtube_title(show_title, story_text):
               print("🎯 جاري توليد عنوان يوتيوب ذكي ومضاد للانهيار...", flush=True)
               prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لفيديو يحكي قصة. "
@@ -289,9 +287,11 @@ jobs:
                         f"استخرج حدثاً مشوقاً من هذه القصة: {story_text[:1000]}... "
                         "تحذير صارم جداً: اكتب جملة العنوان فقط لا غير. لا تكتب 'إليك العنوان' ولا تكتب أي شروحات أو مقدمات أو خاتمات. ممنوع استخدام أقواس أو رموز أو اسم المسلسل في العنوان. أريد جملة العنوان فقط.")
               
-              for attempt, provider in enumerate(SAFE_PROVIDERS[:3]):
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              for attempt in range(3):
+                  model = models_to_try[attempt % len(models_to_try)]
                   try:
-                      raw_title = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
+                      raw_title = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
                       clean_title = raw_title.replace('"', '').replace('[', '').replace(']', '').replace('*', '').replace(' العنوان', '').replace('جملة', '').strip()
                       if len(clean_title) > 95: clean_title = clean_title[:95] + "..."
                       return clean_title
@@ -299,7 +299,7 @@ jobs:
                       time.sleep(3)
               return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
 
-          # ----- توليد وصف اليوتيوب -----
+          # ----- توليد وصف اليوتيوب المضاد للردود الحوارية مع نظام ذكي للتبديل -----
           def generate_youtube_desc(show_title, story_text):
               print("📝 جاري توليد وصف يوتيوب مدمج ومتفرق...", flush=True)
               prompt = (f"اكتب وصفاً لفيديو يوتيوب يحكي قصة. "
@@ -308,9 +308,11 @@ jobs:
                         "2. أضف الكلمات المفتاحية: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة ومتفرقة بشكل طبيعي ومندمج في السياق، لا تضعها بجانب بعضها أو في أقواس. "
                         "3. تحذير صارم جداً: اكتب نص الوصف للقصة فقط لا غير. ممنوع كتابة أي مقدمات أو ردود حوارية مثل 'بالتأكيد' أو 'تفضل الوصف'. ممنوع استخدام النجوم (**) أو الأقواس للتحديد.")
               
-              for attempt, provider in enumerate(SAFE_PROVIDERS[:3]):
+              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              for attempt in range(3):
+                  model = models_to_try[attempt % len(models_to_try)]
                   try:
-                      raw_desc = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
+                      raw_desc = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
                       clean_desc = re.sub(r'(حسنا|بالتأكيد|إليك|تفضل|بالتحديد|هذا هو|الوصف|:\n|^\n)', '', raw_desc, flags=re.IGNORECASE).strip()
                       return clean_desc
                   except Exception as e:
@@ -324,7 +326,8 @@ jobs:
 
           # ----- تصميم الصورة المصغرة -----
           def create_youtube_thumbnail(title_text):
-              print("🖼️ جاري تصميم الصورة المصغرة...", flush=True)
+              print("🖼️ جاري تصميم الصورة المصغرة (بوستر مُموه + عنوان ضخم مع إيموجي)...", flush=True)
+              
               font_path = "NotoNaskhArabic-Bold.ttf"
               if not os.path.exists(font_path):
                   print("⬇️ جاري تحميل الخط العربي للصورة المصغرة...", flush=True)
@@ -333,7 +336,7 @@ jobs:
                       with open(font_path, "wb") as f:
                           f.write(requests.get(font_url, verify=False).content)
                   except Exception as e:
-                      pass
+                      print(f"⚠️ فشل تحميل الخط: {e}", flush=True)
 
               try:
                   width, height = 1280, 720
@@ -365,8 +368,11 @@ jobs:
                   reshaped_text = arabic_reshaper.reshape(title_text + emoji)
                   bidi_text = get_display(reshaped_text)
                   
-                  try: font = ImageFont.truetype(font_path, 110)
-                  except: font = ImageFont.load_default()
+                  try:
+                      font = ImageFont.truetype(font_path, 110)
+                  except Exception as e:
+                      print(f"⚠️ تحذير: فشل تحميل الخط، سيتم استخدام الافتراضي. السبب: {e}")
+                      font = ImageFont.load_default()
                   
                   def wrap_text(text, font, max_width):
                       lines = []
@@ -379,6 +385,7 @@ jobs:
                       return lines
                   
                   lines = wrap_text(bidi_text, font, width - 200)
+                  
                   line_height = 140
                   total_height = len(lines) * line_height
                   y_text = (height - total_height) / 2
@@ -386,14 +393,17 @@ jobs:
                   for line in lines:
                       text_width = font.getlength(line)
                       x_text = (width - text_width) / 2
+                      
                       for offset in range(3, 10): 
                           draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
                           draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
                           draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
                           draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
+                      
                       draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
+                      
                       y_text += line_height
-                  
+                      
                   img.save("thumbnail.jpg")
                   return "thumbnail.jpg"
               except Exception as e:
@@ -401,7 +411,7 @@ jobs:
                   Image.new('RGB', (1280, 720), color="black").save("thumbnail.jpg")
                   return "thumbnail.jpg"
 
-          # ----- نظام الترجمة المستقل -----
+          # ----- نظام الترجمة -----
           async def process_audio_and_subs(script):
               if not script: return False
               print("🎙️ معالجة الصوت وبناء ملف الترجمة ASS يدوياً...", flush=True)
@@ -462,52 +472,10 @@ jobs:
                   return
               
               if await process_audio_and_subs(script):
-                  print("🎬 بدء المونتاج السينمائي ودمج الفيديوهات وحرق الترجمة...", flush=True)
+                  print("🎬 بدء المونتاج السينمائي ودمج المقاطع وحرق الترجمة...", flush=True)
                   
                   aud = AudioFileClip("v.mp3")
-                  target_duration = aud.duration
                   
-                  # 1. جلب الكلمات المفتاحية وتحميل الفيديوهات من Pexels
-                  pex_keyword = get_pexels_keyword(script)
-                  downloaded_videos = download_pexels_videos(pex_keyword)
-                  
-                  clips_to_concat = []
-                  current_time = 0
-                  
-                  # 2. تجميع الفيديوهات لتغطي مدة الصوت
-                  if downloaded_videos:
-                      print("🎞️ جاري قص ودمج الفيديوهات المحملة...", flush=True)
-                      while current_time < target_duration:
-                          for vp in downloaded_videos:
-                              if current_time >= target_duration:
-                                  break
-                              try:
-                                  clip = VideoFileClip(vp).without_audio()
-                                  
-                                  clip = clip.resize(height=VID_HEIGHT)
-                                  if clip.w < VID_WIDTH:
-                                      clip = clip.resize(width=VID_WIDTH)
-                                  
-                                  clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VID_WIDTH, height=VID_HEIGHT)
-                                  
-                                  clips_to_concat.append(clip)
-                                  current_time += clip.duration
-                              except Exception as e:
-                                  print(f"⚠️ خطأ في معالجة المقطع {vp}: {e}")
-                  
-                  # 3. بناء الفيديو الأساسي 
-                  if clips_to_concat:
-                      base = concatenate_videoclips(clips_to_concat, method="compose")
-                      base = base.subclip(0, target_duration)
-                  else:
-                      print("⚠️ تنبيه: فشل جلب فيديوهات Pexels، سيتم استخدام صورة البوستر كخلفية.", flush=True)
-                      base = ImageClip("p.jpg").resize(height=VID_HEIGHT).set_duration(target_duration)
-                      if base.w > VID_WIDTH:
-                          base = base.crop(x_center=base.w/2, width=VID_WIDTH)
-                  
-                  base = base.set_audio(aud)
-                  
-                  # طبقة حقوق النشر
                   img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
@@ -515,10 +483,46 @@ jobs:
                   disclaimer = "This video is for entertainment purposes only."
                   draw.text((40, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
-                  overlay = ImageClip("overlay.png").set_duration(target_duration)
-                  
-                  # الموجات الصوتية
+
                   os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
+
+                  # جلب المقاطع بناء على السيناريو
+                  keywords = generate_video_keywords(script)
+                  video_files = fetch_pexels_videos(keywords)
+                  
+                  if video_files:
+                      print("🎞️ جاري دمج المقاطع المحملة من Pexels...", flush=True)
+                      clips = []
+                      try:
+                          for vf in video_files:
+                              # تحويل المقطع وإزالة الصوت الأصلي لتفادي التداخل
+                              clip = VideoFileClip(vf).without_audio().resize(height=VID_HEIGHT)
+                              if clip.w > VID_WIDTH:
+                                  clip = clip.crop(x_center=clip.w/2, width=VID_WIDTH)
+                              clips.append(clip)
+                          
+                          base = concatenate_videoclips(clips, method="compose")
+                          
+                          # ضبط المدة الزمنية
+                          if base.duration < aud.duration:
+                              base = base.fx(vfx.loop, duration=aud.duration)
+                          else:
+                              base = base.subclip(0, aud.duration)
+                              
+                          base = base.set_audio(aud)
+                      except Exception as e:
+                          print(f"❌ فشل في معالجة فيديوهات Pexels: {e}")
+                          # الاعتماد على الصورة في حالة فشل الدمج
+                          base = ImageClip("p.jpg").resize(height=VID_HEIGHT).set_duration(aud.duration)
+                          if base.w > VID_WIDTH: base = base.crop(x_center=base.w/2, width=VID_WIDTH)
+                          base = base.set_audio(aud)
+                  else:
+                      print("🖼️ الاعتماد على الصورة الخلفية لعدم وجود فيديوهات...", flush=True)
+                      base = ImageClip("p.jpg").resize(height=VID_HEIGHT).set_duration(aud.duration)
+                      if base.w > VID_WIDTH: base = base.crop(x_center=base.w/2, width=VID_WIDTH)
+                      base = base.set_audio(aud)
+
+                  overlay = ImageClip("overlay.png").set_duration(aud.duration)
                   
                   if os.path.exists("temp_waves.mp4"):
                       waves = VideoFileClip("temp_waves.mp4").without_audio().fx(vfx.mask_color, color=[0,0,0], thr=10, s=5).set_position((VID_WIDTH - 430, 40)).set_opacity(0.9)
@@ -527,15 +531,13 @@ jobs:
                       final_vid = CompositeVideoClip([base, overlay])
                       
                   final_vid = final_vid.set_audio(base.audio)
-                  
-                  print("⏳ جاري حفظ الفيديو الأساسي النهائي...", flush=True)
                   final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
                   
                   aud.close()
                   base.close()
                   overlay.close()
                   
-                  print("✍️ جاري حرق الترجمة العربية (ASS) على الفيديو...", flush=True)
+                  print("✍️ جاري حرق الترجمة العربية Noto Naskh Arabic (ASS) على الفيديو...", flush=True)
                   os.system('ffmpeg -y -i temp_out.mp4 -vf "ass=subs.ass" -c:a copy out.mp4 -loglevel quiet')
                   
                   if not os.path.exists("out.mp4"):
@@ -544,6 +546,8 @@ jobs:
                   if os.path.exists("out.mp4"):
                       if ENABLE_CATBOX_UPLOAD == 1:
                           upload_to_catbox("out.mp4")
+                      else:
+                          print("⏸️ تم إيقاف الرفع لـ Catbox بناءً على الإعدادات.")
                       
                       yt_title = generate_youtube_title(data['title'], script)
                       yt_desc = generate_youtube_desc(data['title'], script)
@@ -573,10 +577,10 @@ jobs:
                           except Exception as e: 
                               print(f"❌ فشل الرفع لليوتيوب: {e}")
                       else:
-                          print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على الإعدادات أو لعدم وجود Credentials.")
+                          print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على الإعدادات.")
 
-                      with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                          f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                  with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                      f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
 
           if __name__ == "__main__":
               asyncio.run(start_production())
