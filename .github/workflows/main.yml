@@ -52,14 +52,11 @@ jobs:
           
           wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
-          # حل مشكلة مجلد har_and_cookies
-          mkdir -p har_and_cookies
-          chmod 777 har_and_cookies
-          
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
           import nest_asyncio
           import g4f
+          from g4f.Provider import Blackbox, PollinationsAI, DuckDuckGo, ChatGptEs
           from bs4 import BeautifulSoup
           from tqdm import tqdm
           import numpy as np
@@ -80,7 +77,7 @@ jobs:
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
 
-          # إيقاف محاولة قراءة الكوكيز لتجنب خطأ har_and_cookies
+          # إيقاف محاولة قراءة الكوكيز نهائياً
           try:
               import g4f.cookies
               g4f.cookies.browsers = []
@@ -115,6 +112,9 @@ jobs:
               {"name": "ShortTV", "url": "https://www.shorttv.live/ar", "base": "https://www.shorttv.live"}
           ]
           # ------------------------------------------- #
+
+          # قائمة المزودين الآمنين لتخطي مشكلة .har
+          SAFE_PROVIDERS = [PollinationsAI, Blackbox, DuckDuckGo, ChatGptEs]
 
           def is_valid_image(url, alt_text):
               url_lower = url.lower()
@@ -191,10 +191,9 @@ jobs:
           def get_pexels_keyword(story_text):
               print("🧠 جاري استخراج كلمة مفتاحية مرئية للقصة لجلب فيديوهات Pexels...", flush=True)
               prompt = f"Read this drama story: '{story_text[:800]}...'. Provide 1 single English search keyword to find generic stock footage on Pexels that matches the vibe (e.g. 'dark city', 'sad man', 'luxury lifestyle', 'mystery', 'office'). Write only the keyword."
-              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
-              for model in models_to_try:
+              for attempt, provider in enumerate(SAFE_PROVIDERS):
                   try:
-                      res = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      res = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
                       clean_res = re.sub(r'[^a-zA-Z\s]', '', res).strip()
                       if clean_res and len(clean_res.split()) <= 3:
                           return clean_res
@@ -211,7 +210,6 @@ jobs:
                   return []
               
               headers = {"Authorization": api_key}
-              # جلب فيديوهات بالطول (Portrait) لتناسب حجمك
               url = f"https://api.pexels.com/videos/search?query={keyword}&per_page=15&orientation=portrait"
               downloaded = []
               
@@ -221,7 +219,7 @@ jobs:
                       videos = res.json().get("videos", [])
                       random.shuffle(videos)
                       
-                      for i, v in enumerate(videos[:8]): # تحميل 8 مقاطع مختلفة كحد أقصى
+                      for i, v in enumerate(videos[:8]): 
                           files = v.get("video_files", [])
                           hd_files = [f for f in files if f.get("quality") == "hd"]
                           best_file = hd_files[0] if hd_files else (files[0] if files else None)
@@ -264,24 +262,21 @@ jobs:
                         "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
                         "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
               
-              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
-              
-              for attempt in range(5):
-                  model = models_to_try[attempt % len(models_to_try)]
+              for attempt in range(6):
+                  provider = SAFE_PROVIDERS[attempt % len(SAFE_PROVIDERS)]
                   try:
-                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو...", flush=True)
-                      response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      print(f"🔄 محاولة {attempt + 1} لتوليد السيناريو عبر {provider.__name__}...", flush=True)
+                      response = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
                       
                       if response and len(response.split()) > 150: 
                           clean_chunk = re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
                           print(f"   -> ✅ تم توليد السيناريو بنجاح ({len(clean_chunk.split())} كلمة تقريبا).", flush=True)
                           return clean_chunk
                       else:
-                          print("⚠️ الرد من السيرفر كان غير مكتمل أو قصير جداً، جاري التبديل للمحاولة التالية...", flush=True)
+                          print("⚠️ الرد من السيرفر كان غير مكتمل، جاري التبديل لمزود آخر...", flush=True)
                   except Exception as e: 
-                      print(f"❌ خطأ في الاتصال بالذكاء الاصطناعي (المحاولة {attempt + 1}): {e}", flush=True)
-                  
-                  time.sleep(7)
+                      print(f"❌ خطأ مع المزود {provider.__name__}: {e}", flush=True)
+                  time.sleep(5)
               
               return ""
 
@@ -294,11 +289,9 @@ jobs:
                         f"استخرج حدثاً مشوقاً من هذه القصة: {story_text[:1000]}... "
                         "تحذير صارم جداً: اكتب جملة العنوان فقط لا غير. لا تكتب 'إليك العنوان' ولا تكتب أي شروحات أو مقدمات أو خاتمات. ممنوع استخدام أقواس أو رموز أو اسم المسلسل في العنوان. أريد جملة العنوان فقط.")
               
-              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
-              for attempt in range(3):
-                  model = models_to_try[attempt % len(models_to_try)]
+              for attempt, provider in enumerate(SAFE_PROVIDERS[:3]):
                   try:
-                      raw_title = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      raw_title = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
                       clean_title = raw_title.replace('"', '').replace('[', '').replace(']', '').replace('*', '').replace(' العنوان', '').replace('جملة', '').strip()
                       if len(clean_title) > 95: clean_title = clean_title[:95] + "..."
                       return clean_title
@@ -315,11 +308,9 @@ jobs:
                         "2. أضف الكلمات المفتاحية: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة ومتفرقة بشكل طبيعي ومندمج في السياق، لا تضعها بجانب بعضها أو في أقواس. "
                         "3. تحذير صارم جداً: اكتب نص الوصف للقصة فقط لا غير. ممنوع كتابة أي مقدمات أو ردود حوارية مثل 'بالتأكيد' أو 'تفضل الوصف'. ممنوع استخدام النجوم (**) أو الأقواس للتحديد.")
               
-              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
-              for attempt in range(3):
-                  model = models_to_try[attempt % len(models_to_try)]
+              for attempt, provider in enumerate(SAFE_PROVIDERS[:3]):
                   try:
-                      raw_desc = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      raw_desc = g4f.ChatCompletion.create(model="gpt-4o", provider=provider, messages=[{"role":"user", "content": prompt}])
                       clean_desc = re.sub(r'(حسنا|بالتأكيد|إليك|تفضل|بالتحديد|هذا هو|الوصف|:\n|^\n)', '', raw_desc, flags=re.IGNORECASE).strip()
                       return clean_desc
                   except Exception as e:
@@ -493,12 +484,10 @@ jobs:
                               try:
                                   clip = VideoFileClip(vp).without_audio()
                                   
-                                  # تعديل المقاسات لتناسب إعداداتك (1280x1400)
                                   clip = clip.resize(height=VID_HEIGHT)
                                   if clip.w < VID_WIDTH:
                                       clip = clip.resize(width=VID_WIDTH)
                                   
-                                  # قص الزيادات من المنتصف (Crop)
                                   clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=VID_WIDTH, height=VID_HEIGHT)
                                   
                                   clips_to_concat.append(clip)
@@ -506,7 +495,7 @@ jobs:
                               except Exception as e:
                                   print(f"⚠️ خطأ في معالجة المقطع {vp}: {e}")
                   
-                  # 3. بناء الفيديو الأساسي (سواء نجح Pexels أو تم اللجوء للصورة)
+                  # 3. بناء الفيديو الأساسي 
                   if clips_to_concat:
                       base = concatenate_videoclips(clips_to_concat, method="compose")
                       base = base.subclip(0, target_duration)
