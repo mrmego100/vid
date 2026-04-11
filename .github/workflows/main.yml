@@ -36,7 +36,7 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           sudo apt-get update -q
-          # تم تنظيف المتطلبات لتسريع العملية (حذفنا كروم وماكينة الشاشة الوهمية)
+          # تم تنظيف المتطلبات لتسريع العملية
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
           # إعداد الخط العربي
@@ -90,7 +90,7 @@ jobs:
           VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
           VID_WIDTH = 1280  # العرض
           VID_HEIGHT = 1400 # الطول
-          VID_FPS = 30      # معدل الإطارات (تم تقليله لـ 30 لسرعة الرندر مع Pexels)
+          VID_FPS = 30      # معدل الإطارات
           
           # --- إعدادات كلمات السكربت --- #
           STORY_MIN_WORDS = 2000  # الحد الأدنى لعدد كلمات القصة
@@ -193,7 +193,7 @@ jobs:
               except Exception as e:
                   print(f"❌ حدث خطأ أثناء الرفع لـ Catbox: {e}")
 
-          # ----- نظام التأليف الذكي مع التبديل التلقائي السليم (Smart Fallback & Retry) -----
+          # ----- نظام التأليف الذكي مع التبديل التلقائي السليم -----
           def create_narrative_script(t, d):
               print(f"🤖 جاري تأليف قصة سردية ({STORY_MIN_WORDS}-{STORY_MAX_WORDS} كلمة) لمسلسل '{t}'...", flush=True)
               prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
@@ -278,7 +278,7 @@ jobs:
                       print(f"❌ خطأ أثناء تحميل مقطع لـ '{kw}': {e}")
               return downloaded
 
-          # ----- توليد عنوان اليوتيوب المضاد للانهيار مع نظام ذكي للتبديل -----
+          # ----- توليد عنوان اليوتيوب -----
           def generate_youtube_title(show_title, story_text):
               print("🎯 جاري توليد عنوان يوتيوب ذكي ومضاد للانهيار...", flush=True)
               prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لفيديو يحكي قصة. "
@@ -299,7 +299,7 @@ jobs:
                       time.sleep(3)
               return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
 
-          # ----- توليد وصف اليوتيوب المضاد للردود الحوارية مع نظام ذكي للتبديل -----
+          # ----- توليد وصف اليوتيوب -----
           def generate_youtube_desc(show_title, story_text):
               print("📝 جاري توليد وصف يوتيوب مدمج ومتفرق...", flush=True)
               prompt = (f"اكتب وصفاً لفيديو يوتيوب يحكي قصة. "
@@ -326,17 +326,15 @@ jobs:
 
           # ----- تصميم الصورة المصغرة -----
           def create_youtube_thumbnail(title_text):
-              print("🖼️ جاري تصميم الصورة المصغرة (بوستر مُموه + عنوان ضخم مع إيموجي)...", flush=True)
+              print("🖼️ جاري تصميم الصورة المصغرة...", flush=True)
               
               font_path = "NotoNaskhArabic-Bold.ttf"
               if not os.path.exists(font_path):
-                  print("⬇️ جاري تحميل الخط العربي للصورة المصغرة...", flush=True)
                   font_url = "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf"
                   try:
                       with open(font_path, "wb") as f:
                           f.write(requests.get(font_url, verify=False).content)
-                  except Exception as e:
-                      print(f"⚠️ فشل تحميل الخط: {e}", flush=True)
+                  except: pass
 
               try:
                   width, height = 1280, 720
@@ -368,11 +366,8 @@ jobs:
                   reshaped_text = arabic_reshaper.reshape(title_text + emoji)
                   bidi_text = get_display(reshaped_text)
                   
-                  try:
-                      font = ImageFont.truetype(font_path, 110)
-                  except Exception as e:
-                      print(f"⚠️ تحذير: فشل تحميل الخط، سيتم استخدام الافتراضي. السبب: {e}")
-                      font = ImageFont.load_default()
+                  try: font = ImageFont.truetype(font_path, 110)
+                  except: font = ImageFont.load_default()
                   
                   def wrap_text(text, font, max_width):
                       lines = []
@@ -385,7 +380,6 @@ jobs:
                       return lines
                   
                   lines = wrap_text(bidi_text, font, width - 200)
-                  
                   line_height = 140
                   total_height = len(lines) * line_height
                   y_text = (height - total_height) / 2
@@ -393,21 +387,17 @@ jobs:
                   for line in lines:
                       text_width = font.getlength(line)
                       x_text = (width - text_width) / 2
-                      
                       for offset in range(3, 10): 
                           draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
                           draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
                           draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 150))
                           draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 150))
-                      
                       draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
-                      
                       y_text += line_height
                       
                   img.save("thumbnail.jpg")
                   return "thumbnail.jpg"
               except Exception as e:
-                  print(f"❌ خطأ في صنع الصورة المصغرة: {e}")
                   Image.new('RGB', (1280, 720), color="black").save("thumbnail.jpg")
                   return "thumbnail.jpg"
 
@@ -468,11 +458,10 @@ jobs:
               
               script = create_narrative_script(data['title'], data['desc'])
               if len(script.split()) < 10: 
-                  print("⚠️ السيناريو قصير جداً، تم إلغاء العملية.")
                   return
               
               if await process_audio_and_subs(script):
-                  print("🎬 بدء المونتاج السينمائي ودمج المقاطع وحرق الترجمة...", flush=True)
+                  print("🎬 بدء المونتاج السينمائي...", flush=True)
                   
                   aud = AudioFileClip("v.mp3")
                   
@@ -484,35 +473,50 @@ jobs:
                   draw.text((40, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
 
-                  os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel quiet')
+                  os.system(f'ffmpeg -i v.mp3 -filter_complex "[0:a]showwaves=s=400x150:colors=red:mode=cline,hue=H=t:s=1,format=yuv420p[v]" -map "[v]" -c:v libx264 temp_waves.mp4 -y -loglevel error')
 
-                  # جلب المقاطع بناء على السيناريو
                   keywords = generate_video_keywords(script)
                   video_files = fetch_pexels_videos(keywords)
                   
                   if video_files:
-                      print("🎞️ جاري دمج المقاطع المحملة من Pexels...", flush=True)
+                      print("🎞️ جاري معالجة وتوحيد مقاطع Pexels...", flush=True)
                       clips = []
                       try:
                           for vf in video_files:
-                              # تحويل المقطع وإزالة الصوت الأصلي لتفادي التداخل
-                              clip = VideoFileClip(vf).without_audio().resize(height=VID_HEIGHT)
-                              if clip.w > VID_WIDTH:
-                                  clip = clip.crop(x_center=clip.w/2, width=VID_WIDTH)
+                              # توحيد صارم للفريمات والأبعاد لتجنب التهنيج
+                              clip = VideoFileClip(vf).without_audio().set_fps(VID_FPS)
+                              w, h = clip.size
+                              target_ratio = VID_WIDTH / VID_HEIGHT
+                              clip_ratio = w / h
+                              
+                              if clip_ratio > target_ratio:
+                                  clip = clip.resize(height=VID_HEIGHT).crop(x_center=clip.w/2, width=VID_WIDTH)
+                              else:
+                                  clip = clip.resize(width=VID_WIDTH).crop(y_center=clip.h/2, height=VID_HEIGHT)
                               clips.append(clip)
                           
-                          base = concatenate_videoclips(clips, method="compose")
-                          
-                          # ضبط المدة الزمنية
-                          if base.duration < aud.duration:
-                              base = base.fx(vfx.loop, duration=aud.duration)
-                          else:
-                              base = base.subclip(0, aud.duration)
+                          # نظام التكرار الذكي لمنع استهلاك الذاكرة العشوائية للـ Action
+                          total_dur = sum([c.duration for c in clips])
+                          if total_dur > 0:
+                              repeats = int(aud.duration / total_dur) + 1
+                              extended_clips = clips * repeats
                               
-                          base = base.set_audio(aud)
+                              final_clips = []
+                              curr_dur = 0
+                              for c in extended_clips:
+                                  if curr_dur + c.duration > aud.duration:
+                                      final_clips.append(c.subclip(0, aud.duration - curr_dur))
+                                      break
+                                  final_clips.append(c)
+                                  curr_dur += c.duration
+                                  
+                              base = concatenate_videoclips(final_clips, method="compose")
+                              base = base.set_audio(aud)
+                          else:
+                              raise Exception("مدة الفيديوهات المحملة صفر.")
+                              
                       except Exception as e:
                           print(f"❌ فشل في معالجة فيديوهات Pexels: {e}")
-                          # الاعتماد على الصورة في حالة فشل الدمج
                           base = ImageClip("p.jpg").resize(height=VID_HEIGHT).set_duration(aud.duration)
                           if base.w > VID_WIDTH: base = base.crop(x_center=base.w/2, width=VID_WIDTH)
                           base = base.set_audio(aud)
@@ -531,30 +535,30 @@ jobs:
                       final_vid = CompositeVideoClip([base, overlay])
                       
                   final_vid = final_vid.set_audio(base.audio)
-                  final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", verbose=False, logger=None)
+                  
+                  # تم إضافة شريط التقدم وزيادة سرعة الرندر بشكل كبير جداً
+                  print("⏳ جاري الرندر النهائي للفيديو (سيظهر شريط التقدم الآن)...", flush=True)
+                  final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, logger='bar')
                   
                   aud.close()
                   base.close()
                   overlay.close()
                   
                   print("✍️ جاري حرق الترجمة العربية Noto Naskh Arabic (ASS) على الفيديو...", flush=True)
-                  os.system('ffmpeg -y -i temp_out.mp4 -vf "ass=subs.ass" -c:a copy out.mp4 -loglevel quiet')
+                  os.system('ffmpeg -y -i temp_out.mp4 -vf "ass=subs.ass" -c:a copy out.mp4 -loglevel error')
                   
                   if not os.path.exists("out.mp4"):
                       os.rename("temp_out.mp4", "out.mp4")
 
                   if os.path.exists("out.mp4"):
-                      if ENABLE_CATBOX_UPLOAD == 1:
-                          upload_to_catbox("out.mp4")
-                      else:
-                          print("⏸️ تم إيقاف الرفع لـ Catbox بناءً على الإعدادات.")
+                      if ENABLE_CATBOX_UPLOAD == 1: upload_to_catbox("out.mp4")
                       
                       yt_title = generate_youtube_title(data['title'], script)
                       yt_desc = generate_youtube_desc(data['title'], script)
                       thumb_path = create_youtube_thumbnail(yt_title)
 
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
-                          print(f"📤 جاري الرفع إلى يوتيوب بعنوان مشوق وضخم:\n{yt_title}", flush=True)
+                          print(f"📤 جاري الرفع إلى يوتيوب بعنوان:\n{yt_title}", flush=True)
                           try:
                               creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
                               youtube = build('youtube', 'v3', credentials=creds)
@@ -570,14 +574,11 @@ jobs:
                               res = req.execute()
                               
                               if os.path.exists(thumb_path):
-                                  print("🖼️ رفع الصورة المصغرة الاحترافية الجديدة...", flush=True)
                                   youtube.thumbnails().set(videoId=res['id'], media_body=MediaFileUpload(thumb_path)).execute()
                                   
                               print("✅ تم الرفع على يوتيوب بنجاح!")
                           except Exception as e: 
                               print(f"❌ فشل الرفع لليوتيوب: {e}")
-                      else:
-                          print("⏸️ تم إيقاف الرفع لليوتيوب بناءً على الإعدادات.")
 
                   with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                       f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
