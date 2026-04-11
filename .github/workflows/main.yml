@@ -180,7 +180,7 @@ jobs:
           def get_pexels_keyword(story_text):
               print("🧠 جاري استخراج كلمة مفتاحية مرئية للقصة لجلب فيديوهات Pexels...", flush=True)
               prompt = f"Read this drama story: '{story_text[:800]}...'. Provide 1 single English search keyword to find generic stock footage on Pexels that matches the vibe (e.g. 'dark city', 'sad man', 'luxury lifestyle', 'mystery', 'office'). Write only the keyword."
-              models_to_try = ["gpt-3.5-turbo", "gpt-4"]
+              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
               for model in models_to_try:
                   try:
                       res = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
@@ -253,7 +253,7 @@ jobs:
                         "ممنوع استخدام أي رموز، أو أقواس، أو نجوم، أو أسماء شخصيات مسبوقة بنقطتين. "
                         "تحذير هام جداً: لا تكتب أي مقدمات أو ترحيب أو خاتمات (مثل: 'إليك القصة'، 'حسناً')، اكتب النص السردي للقصة مباشرة وفقط.")
               
-              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
               
               for attempt in range(5):
                   model = models_to_try[attempt % len(models_to_try)]
@@ -283,7 +283,7 @@ jobs:
                         f"استخرج حدثاً مشوقاً من هذه القصة: {story_text[:1000]}... "
                         "تحذير صارم جداً: اكتب جملة العنوان فقط لا غير. لا تكتب 'إليك العنوان' ولا تكتب أي شروحات أو مقدمات أو خاتمات. ممنوع استخدام أقواس أو رموز أو اسم المسلسل في العنوان. أريد جملة العنوان فقط.")
               
-              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
               for attempt in range(3):
                   model = models_to_try[attempt % len(models_to_try)]
                   try:
@@ -304,7 +304,7 @@ jobs:
                         "2. أضف الكلمات المفتاحية: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة ومتفرقة بشكل طبيعي ومندمج في السياق، لا تضعها بجانب بعضها أو في أقواس. "
                         "3. تحذير صارم جداً: اكتب نص الوصف للقصة فقط لا غير. ممنوع كتابة أي مقدمات أو ردود حوارية مثل 'بالتأكيد' أو 'تفضل الوصف'. ممنوع استخدام النجوم (**) أو الأقواس للتحديد.")
               
-              models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+              models_to_try = ["gpt-4o", "gpt-4", "gpt-4o-mini"]
               for attempt in range(3):
                   model = models_to_try[attempt % len(models_to_try)]
                   try:
@@ -512,7 +512,7 @@ jobs:
                   draw = ImageDraw.Draw(img)
                   try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
                   except: small_font = ImageFont.load_default()
-                  disclaimer = "This story is for entertainment purposes only."
+                  disclaimer = "This video is for entertainment purposes only."
                   draw.text((40, VID_HEIGHT - 60), disclaimer, font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
                   overlay = ImageClip("overlay.png").set_duration(target_duration)
