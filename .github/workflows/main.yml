@@ -1,407 +1,503 @@
-import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
-import nest_asyncio
-import g4f
-from bs4 import BeautifulSoup
-from tqdm import tqdm
-import numpy as np
-import edge_tts
-import arabic_reshaper
-from bidi.algorithm import get_display
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+name: Perpetual Dual
 
-import PIL.Image
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+on:
+  workflow_dispatch:
 
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_videoclips
-import moviepy.video.fx.all as vfx
-from datetime import datetime
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+concurrency:
+  group: streaming-group
+  cancel-in-progress: true
 
-nest_asyncio.apply()
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
-os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
-os.environ["SDL_VIDEODRIVER"] = "dummy"
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
 
-HISTORY_FILE = "shows_history.txt"
+    steps:
+      - uses: actions/checkout@v4
 
-# ---------------- الإعدادات ---------------- #
-ENABLE_YOUTUBE_UPLOAD = 1
-ENABLE_CATBOX_UPLOAD = 0
-VOICE_NARRATOR = "ar-EG-ShakirNeural"
-VID_WIDTH = 720
-VID_HEIGHT = 1280
-VID_FPS = 24
+      - name: 🧹 Delete Old Logs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 1
 
-STORY_MIN_WORDS = 2000
-STORY_MAX_WORDS = 2500
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
+      - name: 🚀 Create and Run Script
+        env:
+          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
+          
+          curl -sL "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
+          sudo mkdir -p /usr/share/fonts/truetype/custom
+          sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
+          sudo fc-cache -fv || true
+          
+          for i in {1..5}; do
+            pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
+          done
+          
+          wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
+          
+          cat << 'EOF' > script.py
+          import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
+          import nest_asyncio
+          import g4f
+          from bs4 import BeautifulSoup
+          from tqdm import tqdm
+          import numpy as np
+          import edge_tts
+          import arabic_reshaper
+          from bidi.algorithm import get_display
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 
-SITES_CONFIG = [
-    {"name": "ReelShort", "url": "https://www.reelshort.com/ar", "base": "https://www.reelshort.com"},
-    {"name": "DramaBox", "url": "https://www.dramabox.com/ar", "base": "https://www.dramabox.com"},
-    {"name": "FlexTV", "url": "https://flextv.cc/ar", "base": "https://flextv.cc"},
-    {"name": "ShortTV", "url": "https://www.shorttv.live/ar", "base": "https://www.shorttv.live"}
-]
-# ------------------------------------------- #
+          import PIL.Image
+          if not hasattr(PIL.Image, 'ANTIALIAS'):
+              PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-def is_valid_image(url, alt_text):
-    url_lower = url.lower()
-    alt_lower = alt_text.lower()
-    if any(word in url_lower or word in alt_lower for word in BAD_KEYWORDS): return False
-    if "icon" in url_lower or "logo" in url_lower: return False
-    return True
+          from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_videoclips
+          import moviepy.video.fx.all as vfx
+          from datetime import datetime
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
 
-def get_data():
-    print("🔍 جاري فحص المنصات لجلب مسلسل جديد...", flush=True)
-    history = []
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                if "|" in line: history.append(line.split("|")[0].strip())
-    
-    random.shuffle(SITES_CONFIG)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7",
-    }
+          nest_asyncio.apply()
+          urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+          warnings.filterwarnings("ignore", category=UserWarning)
+          os.environ["IMAGEIO_FFMPEG_EXE"] = "ffmpeg"
+          os.environ["SDL_VIDEODRIVER"] = "dummy"
 
-    for site in SITES_CONFIG:
-        print(f"🔎 جاري فحص موقع: {site['name']}...", flush=True)
-        try:
-            response = requests.get(site['url'], headers=headers, timeout=25, verify=False)
-            if response.status_code != 200: continue
+          HISTORY_FILE = "shows_history.txt"
 
-            soup = BeautifulSoup(response.text, 'html.parser')
-            found_shows = []
+          # ---------------- الإعدادات ---------------- #
+          ENABLE_YOUTUBE_UPLOAD = 1
+          ENABLE_CATBOX_UPLOAD = 0
+          VOICE_NARRATOR = "ar-EG-ShakirNeural"
+          VID_WIDTH = 720
+          VID_HEIGHT = 1280
+          VID_FPS = 24
+          
+          STORY_MIN_WORDS = 2000  
+          STORY_MAX_WORDS = 2500  
+          
+          BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
+          
+          SITES_CONFIG = [
+              {"name": "ReelShort", "url": "https://www.reelshort.com/ar", "base": "https://www.reelshort.com"},
+              {"name": "DramaBox", "url": "https://www.dramabox.com/ar", "base": "https://www.dramabox.com"},
+              {"name": "FlexTV", "url": "https://flextv.cc/ar", "base": "https://flextv.cc"},
+              {"name": "ShortTV", "url": "https://www.shorttv.live/ar", "base": "https://www.shorttv.live"}
+          ]
+          # ------------------------------------------- #
 
-            scripts = soup.find_all('script')
-            for script in scripts:
-                if not script.string: continue
-                json_matches = re.findall(r'\{"id":.*?"title":"([^"]+)".*?"(?:cover|poster|image)":"([^"]+)"', script.string)
-                
-                for m_title, m_img in json_matches:
-                    clean_title = m_title.encode().decode('unicode-escape').strip() if '\\u' in m_title else m_title.strip()
-                    clean_title = re.sub(r'[a-zA-Z0-9]', '', clean_title).strip()
-                    
-                    if len(clean_title) > 3 and clean_title not in history:
-                        if is_valid_image(m_img, clean_title) and m_img.startswith('http'):
-                            found_shows.append({"title": clean_title, "image": m_img, "desc": f"دراما واقعية ومشوقة من منصة {site['name']}"})
+          def is_valid_image(url, alt_text):
+              url_lower = url.lower()
+              alt_lower = alt_text.lower()
+              if any(word in url_lower or word in alt_lower for word in BAD_KEYWORDS): return False
+              if "icon" in url_lower or "logo" in url_lower: return False
+              return True
 
-            if not found_shows:
-                for img in soup.find_all('img', alt=True):
-                    raw_alt = img.get('alt', '').strip()
-                    title = re.sub(r'[a-zA-Z0-9]', '', raw_alt).strip()
-                    
-                    if len(title) > 3 and title not in history:
-                        img_url = img.get('data-src') or img.get('data-original') or img.get('src') or img.get('srcset')
-                        if img_url:
-                            img_url = img_url.split(' ')[0] 
-                            if img_url.startswith('//'): img_url = "https:" + img_url
-                            if not img_url.startswith('http'): img_url = site['base'] + img_url
-                            
-                            if is_valid_image(img_url, raw_alt) and "base64" not in img_url:
-                                found_shows.append({"title": title, "image": img_url, "desc": f"دراما واقعية ومشوقة من منصة {site['name']}"})
+          def get_data():
+              print("🔍 جاري فحص المنصات لجلب مسلسل جديد...", flush=True)
+              history = []
+              if os.path.exists(HISTORY_FILE):
+                  with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                      for line in f:
+                          if "|" in line: history.append(line.split("|")[0].strip())
+              
+              random.shuffle(SITES_CONFIG)
+              headers = {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                  "Accept-Language": "ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+              }
 
-            if found_shows:
-                selected = random.choice(found_shows)
-                print(f"🎯 تم اختيار مسلسل: '{selected['title']}' من منصة {site['name']}", flush=True)
-                with open("p.jpg", "wb") as f: f.write(requests.get(selected['image'], headers=headers, verify=False).content)
-                return {"title": selected['title'], "desc": selected['desc']}
-        except Exception as e:
-            continue
-    return None
+              for site in SITES_CONFIG:
+                  print(f"🔎 جاري فحص موقع: {site['name']}...", flush=True)
+                  try:
+                      response = requests.get(site['url'], headers=headers, timeout=25, verify=False)
+                      if response.status_code != 200: continue
 
-def upload_to_catbox(filepath):
-    print("📤 جاري الرفع إلى Catbox...", flush=True)
-    try:
-        with open(filepath, 'rb') as f:
-            response = requests.post('https://catbox.moe/user/api.php', data={'reqtype': 'fileupload'}, files={'fileToUpload': f})
-        if response.status_code == 200: print(f"✅ الرابط: {response.text}")
-    except Exception as e: print(f"❌ خطأ: {e}")
+                      soup = BeautifulSoup(response.text, 'html.parser')
+                      found_shows = []
 
-def create_narrative_script(t, d):
-    print(f"🤖 جاري تأليف قصة سردية لمسلسل '{t}'...", flush=True)
-    prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
-              f"يجب أن يتراوح طول القصة بين {STORY_MIN_WORDS} إلى {STORY_MAX_WORDS} كلمة. "
-              "ممنوع تماماً استخدام أسلوب الحوارات. اكتب النص السردي للقصة مباشرة وبدون مقدمات.")
-    
-    models = ["gpt-4", "gpt-3.5-turbo"]
-    for attempt in range(5):
-        try:
-            model = models[attempt % len(models)]
-            response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
-            if response and len(response.split()) > 150: 
-                return re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
-        except Exception: time.sleep(5)
-    return ""
+                      scripts = soup.find_all('script')
+                      for script in scripts:
+                          if not script.string: continue
+                          json_matches = re.findall(r'\{"id":.*?"title":"([^"]+)".*?"(?:cover|poster|image)":"([^"]+)"', script.string)
+                          
+                          for m_title, m_img in json_matches:
+                              clean_title = m_title.encode().decode('unicode-escape').strip() if '\\u' in m_title else m_title.strip()
+                              clean_title = re.sub(r'[a-zA-Z0-9]', '', clean_title).strip()
+                              
+                              if len(clean_title) > 3 and clean_title not in history:
+                                  if is_valid_image(m_img, clean_title) and m_img.startswith('http'):
+                                      found_shows.append({"title": clean_title, "image": m_img, "desc": f"دراما واقعية ومشوقة من منصة {site['name']}"})
 
-# ----- استخراج كلمة مفتاحية لكل جملة بدلاً من مشاهد ثابتة -----
-def generate_sentence_keywords(story_text):
-    print("✂️ تقسيم القصة إلى جمل وتوليد كلمة مفتاحية لكل جملة...", flush=True)
-    # تقسيم النص إلى جمل باستخدام النقطة وعلامات الترقيم العربية
-    sentences = re.split(r'[.!؟\n]+', story_text)
-    sentences = [s.strip() for s in sentences if len(s.strip()) > 15]  # تجاهل الجمل القصيرة جداً
-    
-    # الحد الأقصى 25 جملة لتفادي الإطالة
-    sentences = sentences[:25]
-    print(f"📝 تم العثور على {len(sentences)} جملة صالحة.", flush=True)
-    
-    keywords = []
-    for idx, sent in enumerate(sentences):
-        prompt = (f"For this Arabic sentence, provide ONE short English keyword (max 2 words) "
-                  f"that describes the visual scene or emotion. "
-                  f"Sentence: {sent[:200]}\nKeyword:")
-        try:
-            raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-            kw = raw.strip().replace('.', '').replace('"', '').split(',')[0]
-            keywords.append(kw)
-            print(f"  جملة {idx+1}: {kw}", flush=True)
-        except:
-            # كلمات افتراضية متنوعة
-            fallback = ["sad man", "walking alone", "dramatic sky", "city street", "arguing", 
-                       "running", "dark room", "shocked face", "driving car", "cinematic shot"]
-            keywords.append(random.choice(fallback))
-    
-    return keywords
+                      if not found_shows:
+                          for img in soup.find_all('img', alt=True):
+                              raw_alt = img.get('alt', '').strip()
+                              title = re.sub(r'[a-zA-Z0-9]', '', raw_alt).strip()
+                              
+                              if len(title) > 3 and title not in history:
+                                  img_url = img.get('data-src') or img.get('data-original') or img.get('src') or img.get('srcset')
+                                  if img_url:
+                                      img_url = img_url.split(' ')[0] 
+                                      if img_url.startswith('//'): img_url = "https:" + img_url
+                                      if not img_url.startswith('http'): img_url = site['base'] + img_url
+                                      
+                                      if is_valid_image(img_url, raw_alt) and "base64" not in img_url:
+                                          found_shows.append({"title": title, "image": img_url, "desc": f"دراما واقعية ومشوقة من منصة {site['name']}"})
 
-def fetch_pexels_videos(keywords):
-    print(f"🎥 جاري تحميل {len(keywords)} مقطع فيديو من Pexels...", flush=True)
-    api_key = os.environ.get('PEXELS_API_KEY')
-    if not api_key: return []
-    
-    headers = {"Authorization": api_key}
-    downloaded = []
-    for idx, kw in enumerate(keywords):
-        url = f"https://api.pexels.com/videos/search?query={kw}&per_page=3&orientation=portrait"
-        try:
-            res = requests.get(url, headers=headers, timeout=10).json()
-            if 'videos' in res and res['videos']:
-                video = random.choice(res['videos'])
-                video_files = sorted(video['video_files'], key=lambda x: x['width'], reverse=True)
-                link = next((vf['link'] for vf in video_files if vf['width'] >= 720), video_files[0]['link'])
-                v_data = requests.get(link, timeout=20).content
-                fname = f"scene_{idx}.mp4"
-                with open(fname, "wb") as f: f.write(v_data)
-                downloaded.append(fname)
-                print(f"  ✅ {kw}", flush=True)
-        except: continue
-    return downloaded
+                      if found_shows:
+                          selected = random.choice(found_shows)
+                          print(f"🎯 تم اختيار مسلسل: '{selected['title']}' من منصة {site['name']}", flush=True)
+                          with open("p.jpg", "wb") as f: f.write(requests.get(selected['image'], headers=headers, verify=False).content)
+                          return {"title": selected['title'], "desc": selected['desc']}
+                  except Exception as e:
+                      continue
+              return None
 
-def generate_youtube_title(show_title, story_text):
-    prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لقصة. "
-              f"مثال: 'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال'. "
-              f"اكتب جملة العنوان فقط لا غير بدون أي إضافات: {story_text[:500]}...")
-    try:
-        raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-        return raw.replace('"', '').replace('[', '').strip()[:95]
-    except: return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
+          def upload_to_catbox(filepath):
+              print("📤 جاري الرفع إلى Catbox...", flush=True)
+              try:
+                  with open(filepath, 'rb') as f:
+                      response = requests.post('https://catbox.moe/user/api.php', data={'reqtype': 'fileupload'}, files={'fileToUpload': f})
+                  if response.status_code == 200: print(f"✅ الرابط: {response.text}")
+              except Exception as e: print(f"❌ خطأ: {e}")
 
-def generate_youtube_desc(show_title, story_text):
-    prompt = (f"اكتب وصفاً لفيديو يوتيوب للقصة. خذ كلمات اسم المسلسل '{show_title}' وقم ببعثرتها بشكل طبيعي داخل الوصف. "
-              f"أضف كلمات: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة أيضاً. اكتب الوصف مباشرة وبدون مقدمات.")
-    try:
-        raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-        return re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
-    except: return f"أحداث نارية ومشوقة! نرى كيف تغيرت الأقدار مع {show_title} كامل مترجم."
+          def create_narrative_script(t, d):
+              print(f"🤖 جاري تأليف قصة سردية لمسلسل '{t}'...", flush=True)
+              prompt = (f"أنت الآن راوي قصص محترف. اكتب قصة سردية طويلة جداً ومفصلة تروي أحداث مسلسل '{t}' بناءً على: {d}. "
+                        f"يجب أن يتراوح طول القصة بين {STORY_MIN_WORDS} إلى {STORY_MAX_WORDS} كلمة. "
+                        "ممنوع تماماً استخدام أسلوب الحوارات. اكتب النص السردي للقصة مباشرة وبدون مقدمات. استخدم جمل كاملة منتهية بنقاط.")
+              
+              models = ["gpt-4", "gpt-3.5-turbo"]
+              for attempt in range(5):
+                  try:
+                      model = models[attempt % len(models)]
+                      response = g4f.ChatCompletion.create(model=model, messages=[{"role":"user", "content": prompt}])
+                      if response and len(response.split()) > 150: 
+                          return re.sub(r'[*#_\[\]()\-]', '', response).replace('\\', '').strip()
+                  except Exception: time.sleep(5)
+              return ""
 
-# ----- تحسين عرض النص العربي في الصورة المصغرة -----
-def create_youtube_thumbnail(title_text):
-    print("🖼️ جاري تصميم الصورة المصغرة مع النص العربي المحسّن...", flush=True)
-    font_path = "NotoNaskhArabic-Bold.ttf"
-    width, height = 1280, 720
-    try:
-        img = Image.open("p.jpg").convert('RGB')
-        w, h = img.size
-        zoom_w, zoom_h = int(w * 0.6), int((w * 0.6) / (width / height))
-        img = img.crop(((w - zoom_w)/2, (h - zoom_h)/2, (w + zoom_w)/2, (h + zoom_h)/2))
-        img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=25))
-    except:
-        img = Image.new('RGB', (width, height), color=(15, 15, 25))
+          # ----- جلب فيديوهات متعددة لكل جملة -----
+          def split_into_sentences(text):
+              # تقسيم النص إلى جمل بناءً على النقاط وعلامات الاستفهام والتعجب
+              sentences = re.split(r'(?<=[.!?])\s+', text)
+              sentences = [s.strip() for s in sentences if len(s.strip()) > 15]  # تجاهل الجمل القصيرة جداً
+              return sentences
 
-    overlay = Image.new('RGBA', (width, height), (0, 0, 0, 80))
-    img.paste(overlay, (0, 0), overlay)
-    draw = ImageDraw.Draw(img)
-    
-    try: font = ImageFont.truetype(font_path, 110)
-    except: font = ImageFont.load_default()
-    
-    def wrap_text_arabic(text, font, max_width):
-        words = text.split()
-        lines, current_line = [], []
-        for word in words:
-            test_line = ' '.join(current_line + [word])
-            # نستخدم النص المشكل لعرض دقيق
-            test_bidi = get_display(arabic_reshaper.reshape(test_line))
-            if font.getlength(test_bidi) <= max_width:
-                current_line.append(word)
-            else:
-                if current_line: lines.append(' '.join(current_line))
-                current_line = [word]
-        if current_line: lines.append(' '.join(current_line))
-        return lines
+          def generate_keywords_per_sentence(story_text):
+              sentences = split_into_sentences(story_text)
+              print(f"📝 تم تقسيم القصة إلى {len(sentences)} جملة.", flush=True)
+              if not sentences:
+                  return []
+              
+              # نطلب من GPT كلمة مفتاحية لكل جملة دفعة واحدة
+              prompt = f"القصة التالية مقسمة إلى جمل مرقمة. لكل جملة، أعط كلمة إنجليزية واحدة فقط (أو عبارة قصيرة من كلمتين) تصف مشهداً مناسباً لتلك الجملة. اكتب النتيجة كقائمة مفصولة بفواصل، كل كلمة مقابلة لنفس ترتيب الجمل.\n\n"
+              for i, sent in enumerate(sentences[:40]):  # حد أقصى 40 جملة
+                  prompt += f"{i+1}. {sent[:100]}\n"
+              
+              try:
+                  raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
+                  # استخراج القائمة
+                  keywords = [k.strip().lower() for k in raw.split(',') if k.strip()]
+                  # التأكد من العدد
+                  if len(keywords) < len(sentences):
+                      # تعبئة الباقي بكلمات عامة
+                      defaults = ["dramatic scene", "cinematic shot", "emotional moment", "action clip", "sad look", "happy ending", "surprise face", "walking alone", "city street", "dark room"]
+                      while len(keywords) < len(sentences):
+                          keywords.append(random.choice(defaults))
+                  return keywords[:len(sentences)]
+              except Exception as e:
+                  print(f"⚠️ فشل استخراج الكلمات المفتاحية، سيتم استخدام كلمات عشوائية: {e}")
+                  return [random.choice(["sad man", "walking alone", "dramatic sky", "city street", "arguing", "running", "dark room", "shocked face"]) for _ in sentences]
 
-    emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
-    raw_text = title_text + random.choice(emojis)
-    lines = wrap_text_arabic(raw_text, font, width - 150)
-    
-    line_height = 140
-    total_height = len(lines) * line_height
-    y_text = (height - total_height) / 2
-    
-    for line in lines:
-        # التشكيل والعكس لكل سطر
-        reshaped_line = arabic_reshaper.reshape(line)
-        bidi_line = get_display(reshaped_line)
-        
-        text_width = font.getlength(bidi_line)
-        x_text = (width - text_width) / 2
-        
-        # رسم الظل (Stroke) لتحسين القراءة
-        for offset in range(3, 8): 
-            draw.text((x_text+offset, y_text+offset), bidi_line, font=font, fill=(0,0,0, 180))
-            draw.text((x_text-offset, y_text-offset), bidi_line, font=font, fill=(0,0,0, 180))
-            draw.text((x_text+offset, y_text-offset), bidi_line, font=font, fill=(0,0,0, 180))
-            draw.text((x_text-offset, y_text+offset), bidi_line, font=font, fill=(0,0,0, 180))
-        
-        # النص الأساسي أبيض
-        draw.text((x_text, y_text), bidi_line, font=font, fill=(255, 255, 255))
-        y_text += line_height
-        
-    img.save("thumbnail.jpg")
-    return "thumbnail.jpg"
+          def fetch_pexels_videos(keywords):
+              print(f"🎥 جاري تحميل {len(keywords)} مقطع فيديو (واحد لكل جملة)...", flush=True)
+              api_key = os.environ.get('PEXELS_API_KEY')
+              if not api_key: return []
+              
+              headers = {"Authorization": api_key}
+              downloaded = []
+              for idx, kw in enumerate(keywords):
+                  url = f"https://api.pexels.com/videos/search?query={kw}&per_page=3&orientation=portrait"
+                  try:
+                      res = requests.get(url, headers=headers, timeout=10).json()
+                      if 'videos' in res and res['videos']:
+                          video = random.choice(res['videos'])
+                          video_files = sorted(video['video_files'], key=lambda x: x['width'], reverse=True)
+                          link = next((vf['link'] for vf in video_files if vf['width'] >= 720), video_files[0]['link'])
+                          v_data = requests.get(link, timeout=20).content
+                          fname = f"scene_{idx:03d}.mp4"
+                          with open(fname, "wb") as f: f.write(v_data)
+                          downloaded.append(fname)
+                          time.sleep(0.5)  # تجنب الضغط على API
+                  except Exception as e:
+                      print(f"⚠️ فشل تحميل فيديو للكلمة '{kw}': {e}")
+                      continue
+              print(f"✅ تم تحميل {len(downloaded)} مقطع فيديو بنجاح")
+              return downloaded
 
-async def process_audio_and_subs(script):
-    if not script: return False
-    print("🎙️ معالجة الصوت وبناء ملف الترجمة...", flush=True)
-    try:
-        # تم تعديل سرعة الصوت إلى -6% (أبطأ قليلاً)
-        communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="-6%")
-        word_boundaries = []
-        with open("v.mp3", "wb") as file:
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio": file.write(chunk["data"])
-                elif chunk["type"] == "WordBoundary": word_boundaries.append(chunk)
-        
-        ass_header = """[Script Info]
-ScriptType: v4.00+
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Noto Naskh Arabic,64,&H00FFFFFF,&H00000000,0,0,1,3,0,2,20,20,20,1
-[Events]
-Format: Layer, Start, End, Style, Text
-"""
-        ass_lines = []
-        def format_ass_time(seconds):
-            h, m, s = int(seconds // 3600), int((seconds % 3600) // 60), seconds % 60
-            return f"{h}:{m:02d}:{s:05.2f}"
+          def generate_youtube_title(show_title, story_text):
+              prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لقصة. "
+                        f"مثال: 'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال'. "
+                        f"اكتب جملة العنوان فقط لا غير بدون أي إضافات: {story_text[:500]}...")
+              try:
+                  raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
+                  return raw.replace('"', '').replace('[', '').strip()[:95]
+              except: return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
 
-        for i in range(0, len(word_boundaries), 6):
-            group = word_boundaries[i:i+6]
-            start_time = group[0]["offset"] / 10000000
-            end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
-            text = " ".join([w["text"] for w in group])
-            ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{text}")
+          def generate_youtube_desc(show_title, story_text):
+              prompt = (f"اكتب وصفاً لفيديو يوتيوب للقصة. خذ كلمات اسم المسلسل '{show_title}' وقم ببعثرتها بشكل طبيعي داخل الوصف. "
+                        f"أضف كلمات: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة أيضاً. اكتب الوصف مباشرة وبدون مقدمات.")
+              try:
+                  raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
+                  return re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
+              except: return f"أحداث نارية ومشوقة! نرى كيف تغيرت الأقدار مع {show_title} كامل مترجم."
 
-        with open("subs.ass", "w", encoding="utf-8") as f:
-            f.write(ass_header + "\n".join(ass_lines))
-        return True
-    except Exception as e: return False
+          # ----- تحسين النص العربي في الصورة المصغرة (إصلاح كامل) -----
+          def create_youtube_thumbnail(title_text):
+              print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...", flush=True)
+              font_path = "NotoNaskhArabic-Bold.ttf"
+              width, height = 1280, 720
+              try:
+                  img = Image.open("p.jpg").convert('RGB')
+                  w, h = img.size
+                  zoom_w, zoom_h = int(w * 0.6), int((w * 0.6) / (width / height))
+                  img = img.crop(((w - zoom_w)/2, (h - zoom_h)/2, (w + zoom_w)/2, (h + zoom_h)/2))
+                  img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=25))
+              except:
+                  img = Image.new('RGB', (width, height), color=(15, 15, 25))
 
-async def start_production():
-    data = get_data()
-    if not data: return
-    
-    script = create_narrative_script(data['title'], data['desc'])
-    if len(script.split()) < 10: return
-    
-    if await process_audio_and_subs(script):
-        print("🎬 بناء تسلسل المشاهد حسب الجمل...", flush=True)
-        aud = AudioFileClip("v.mp3")
-        total_audio_time = aud.duration
-        
-        img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
-        except: small_font = ImageFont.load_default()
-        draw.text((40, VID_HEIGHT - 60), "This video is for entertainment purposes only.", font=small_font, fill=(255, 255, 255, 200))
-        img.save("overlay.png")
+              overlay = Image.new('RGBA', (width, height), (0, 0, 0, 80))
+              img.paste(overlay, (0, 0), overlay)
+              draw = ImageDraw.Draw(img)
+              
+              try: font = ImageFont.truetype(font_path, 110)
+              except: font = ImageFont.load_default()
+              
+              # دالة ذكية لتقسيم النص العربي مع مراعاة الشكل المعكوس
+              def wrap_arabic_text(text, font, max_width):
+                  # إضافة إيموجي عشوائي
+                  emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
+                  text += random.choice(emojis)
+                  
+                  # نقسم إلى كلمات أولاً
+                  words = text.split()
+                  lines = []
+                  current_line = []
+                  
+                  for word in words:
+                      # جرب إضافة الكلمة للسطر الحالي
+                      test_line = ' '.join(current_line + [word])
+                      # شكّل السطر تجريبياً لعرضه بشكل صحيح
+                      reshaped_test = arabic_reshaper.reshape(test_line)
+                      bidi_test = get_display(reshaped_test)
+                      # قياس العرض الفعلي للنص المعروض
+                      if font.getlength(bidi_test) <= max_width:
+                          current_line.append(word)
+                      else:
+                          if current_line:
+                              lines.append(' '.join(current_line))
+                          current_line = [word]
+                  if current_line:
+                      lines.append(' '.join(current_line))
+                  
+                  # الآن لكل سطر نقوم بالتشكيل والعكس النهائي
+                  reshaped_lines = []
+                  for line in lines:
+                      reshaped = arabic_reshaper.reshape(line)
+                      bidi_line = get_display(reshaped)
+                      reshaped_lines.append(bidi_line)
+                  return reshaped_lines
+              
+              max_width = width - 150
+              wrapped_lines = wrap_arabic_text(title_text, font, max_width)
+              
+              line_height = 140
+              total_height = len(wrapped_lines) * line_height
+              y_text = (height - total_height) / 2
+              
+              for line in wrapped_lines:   # line الآن جاهز ومعكوس بشكل صحيح
+                  text_width = font.getlength(line)
+                  x_text = (width - text_width) / 2
+                  
+                  # رسم ظل سميك
+                  for offset in range(3, 10, 2):
+                      draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
+                      draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
+                      draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
+                      draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
+                  
+                  # رسم النص الأساسي
+                  draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
+                  y_text += line_height
+                  
+              img.save("thumbnail.jpg")
+              return "thumbnail.jpg"
 
-        # توليد كلمات مفتاحية بعدد الجمل
-        keywords = generate_sentence_keywords(script)
-        video_files = fetch_pexels_videos(keywords)
-        
-        # رندر الفيديوهات الخام
-        if video_files:
-            clips = []
-            segment_dur = total_audio_time / len(video_files)  # توزيع متساوي لكل جملة
-            for vf in video_files:
-                try:
-                    clip = VideoFileClip(vf).without_audio().set_fps(VID_FPS)
-                    w, h = clip.size
-                    target_ratio = VID_WIDTH / VID_HEIGHT
-                    if (w/h) > target_ratio: clip = clip.resize(height=VID_HEIGHT).crop(x_center=w/2, width=VID_WIDTH)
-                    else: clip = clip.resize(width=VID_WIDTH).crop(y_center=h/2, height=VID_HEIGHT)
-                    
-                    repeats = int(segment_dur / clip.duration) + 1
-                    extended = concatenate_videoclips([clip] * repeats, method="compose").subclip(0, segment_dur)
-                    clips.append(extended)
-                except: pass
-            
-            if clips:
-                base = concatenate_videoclips(clips, method="compose")
-            else:
-                base = ImageClip("p.jpg").resize(height=VID_HEIGHT).crop(width=VID_WIDTH).set_duration(total_audio_time)
-        else:
-            base = ImageClip("p.jpg").resize(height=VID_HEIGHT).crop(width=VID_WIDTH).set_duration(total_audio_time)
+          async def process_audio_and_subs(script):
+              if not script: return False
+              print("🎙️ معالجة الصوت (بسرعة أبطأ -15%) وبناء ملف الترجمة...", flush=True)
+              try:
+                  # تباطؤ الصوت بنسبة 15% (rate="-15%")
+                  communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="-15%")
+                  word_boundaries = []
+                  with open("v.mp3", "wb") as file:
+                      async for chunk in communicate.stream():
+                          if chunk["type"] == "audio": file.write(chunk["data"])
+                          elif chunk["type"] == "WordBoundary": word_boundaries.append(chunk)
+                  
+                  ass_header = """[Script Info]
+          ScriptType: v4.00+
+          [V4+ Styles]
+          Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+          Style: Default,Noto Naskh Arabic,64,&H00FFFFFF,&H00000000,0,0,1,3,0,2,20,20,20,1
+          [Events]
+          Format: Layer, Start, End, Style, Text
+          """
+                  ass_lines = []
+                  def format_ass_time(seconds):
+                      h, m, s = int(seconds // 3600), int((seconds % 3600) // 60), seconds % 60
+                      return f"{h}:{m:02d}:{s:05.2f}"
 
-        print("⚡ جاري تجميع مقاطع الفيديو الخام...", flush=True)
-        base.write_videofile("base_video.mp4", fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
-        base.close()
-        aud.close()
+                  for i in range(0, len(word_boundaries), 6):
+                      group = word_boundaries[i:i+6]
+                      start_time = group[0]["offset"] / 10000000
+                      end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
+                      text = " ".join([w["text"] for w in group])
+                      ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{text}")
 
-        # رندر نهائي سريع عبر FFmpeg
-        print("🚀 بدء الرندر النهائي السريع عبر تقنية FFmpeg Filters...", flush=True)
-        ffmpeg_magic_cmd = (
-            'ffmpeg -y -i base_video.mp4 -i v.mp3 -i overlay.png '
-            '-filter_complex "[1:a]showwaves=s=400x150:colors=red:mode=cline:rate=24[wave]; '
-            '[0:v][2:v]overlay=0:0[v1]; '
-            '[v1][wave]overlay=W-w-30:40[v2]; '
-            '[v2]ass=subs.ass[v3]" '
-            '-map "[v3]" -map 1:a -c:v libx264 -preset ultrafast -threads 4 -c:a aac out.mp4 -loglevel error'
-        )
-        os.system(ffmpeg_magic_cmd)
+                  with open("subs.ass", "w", encoding="utf-8") as f:
+                      f.write(ass_header + "\n".join(ass_lines))
+                  return True
+              except Exception as e:
+                  print(f"❌ خطأ في معالجة الصوت: {e}")
+                  return False
 
-        if os.path.exists("out.mp4"):
-            if ENABLE_CATBOX_UPLOAD == 1: upload_to_catbox("out.mp4")
-            
-            yt_title = generate_youtube_title(data['title'], script)
-            yt_desc = generate_youtube_desc(data['title'], script)
-            thumb_path = create_youtube_thumbnail(yt_title)
+          async def start_production():
+              data = get_data()
+              if not data: return
+              
+              script = create_narrative_script(data['title'], data['desc'])
+              if len(script.split()) < 10: return
+              
+              if await process_audio_and_subs(script):
+                  print("🎬 بناء تسلسل الفيديوهات (فيديو لكل جملة)...", flush=True)
+                  aud = AudioFileClip("v.mp3")
+                  total_audio_time = aud.duration
+                  
+                  img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
+                  draw = ImageDraw.Draw(img)
+                  try: small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
+                  except: small_font = ImageFont.load_default()
+                  draw.text((40, VID_HEIGHT - 60), "This video is for entertainment purposes only.", font=small_font, fill=(255, 255, 255, 200))
+                  img.save("overlay.png")
 
-            if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
-                print(f"📤 جاري الرفع إلى يوتيوب...", flush=True)
-                try:
-                    creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
-                    youtube = build('youtube', 'v3', credentials=creds)
-                    body = {
-                        'snippet': {'title': yt_title, 'description': yt_desc + "\n\nThis video is for entertainment purposes only.", 'categoryId': '24'},
-                        'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
-                    }
-                    req = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True))
-                    res = req.execute()
-                    if os.path.exists(thumb_path): youtube.thumbnails().set(videoId=res['id'], media_body=MediaFileUpload(thumb_path)).execute()
-                    print("✅ تم الرفع على يوتيوب بنجاح!")
-                except Exception as e: print(f"❌ فشل الرفع: {e}")
+                  # استخراج كلمات مفتاحية لكل جملة
+                  keywords = generate_keywords_per_sentence(script)
+                  video_files = fetch_pexels_videos(keywords)
+                  
+                  if video_files:
+                      clips = []
+                      # توزيع الوقت بالتساوي على عدد الفيديوهات التي تم تحميلها فعلاً
+                      segment_dur = total_audio_time / len(video_files)
+                      for vf in video_files:
+                          try:
+                              clip = VideoFileClip(vf).without_audio().set_fps(VID_FPS)
+                              w, h = clip.size
+                              target_ratio = VID_WIDTH / VID_HEIGHT
+                              if (w/h) > target_ratio:
+                                  clip = clip.resize(height=VID_HEIGHT).crop(x_center=w/2, width=VID_WIDTH)
+                              else:
+                                  clip = clip.resize(width=VID_WIDTH).crop(y_center=h/2, height=VID_HEIGHT)
+                              
+                              # تكرار المقطع إذا كان قصيراً لملء المدة المطلوبة
+                              repeats = int(segment_dur / clip.duration) + 1
+                              extended = concatenate_videoclips([clip] * repeats, method="compose").subclip(0, segment_dur)
+                              clips.append(extended)
+                          except Exception as e:
+                              print(f"⚠️ فشل معالجة المقطع {vf}: {e}")
+                              continue
+                      
+                      if clips:
+                          base = concatenate_videoclips(clips, method="compose")
+                      else:
+                          base = ImageClip("p.jpg").resize(height=VID_HEIGHT).crop(width=VID_WIDTH).set_duration(total_audio_time)
+                  else:
+                      base = ImageClip("p.jpg").resize(height=VID_HEIGHT).crop(width=VID_WIDTH).set_duration(total_audio_time)
 
-        with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
+                  print("⚡ جاري تجميع المقاطع الخام...", flush=True)
+                  base.write_videofile("base_video.mp4", fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
+                  base.close()
+                  aud.close()
 
-if __name__ == "__main__":
-    asyncio.run(start_production())
-    print("⏱️ الجلسة مستمرة لمدة 4 ساعات...")
-    time.sleep(4 * 60 * 60)
+                  print("🚀 بدء الرندر النهائي السريع...", flush=True)
+                  ffmpeg_magic_cmd = (
+                      'ffmpeg -y -i base_video.mp4 -i v.mp3 -i overlay.png '
+                      '-filter_complex "[1:a]showwaves=s=400x150:colors=red:mode=cline:rate=24[wave]; '
+                      '[0:v][2:v]overlay=0:0[v1]; '
+                      '[v1][wave]overlay=W-w-30:40[v2]; '
+                      '[v2]ass=subs.ass[v3]" '
+                      '-map "[v3]" -map 1:a -c:v libx264 -preset ultrafast -threads 4 -c:a aac out.mp4 -loglevel error'
+                  )
+                  os.system(ffmpeg_magic_cmd)
+
+                  if os.path.exists("out.mp4"):
+                      if ENABLE_CATBOX_UPLOAD == 1: upload_to_catbox("out.mp4")
+                      
+                      yt_title = generate_youtube_title(data['title'], script)
+                      yt_desc = generate_youtube_desc(data['title'], script)
+                      thumb_path = create_youtube_thumbnail(yt_title)
+
+                      if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
+                          print(f"📤 جاري الرفع إلى يوتيوب...", flush=True)
+                          try:
+                              creds = Credentials.from_authorized_user_info(json.loads(os.environ['YOUTUBE_CREDENTIALS']))
+                              youtube = build('youtube', 'v3', credentials=creds)
+                              body = {
+                                  'snippet': {'title': yt_title, 'description': yt_desc + "\n\nThis video is for entertainment purposes only.", 'categoryId': '24'},
+                                  'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
+                              }
+                              req = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload("out.mp4", chunksize=-1, resumable=True))
+                              res = req.execute()
+                              if os.path.exists(thumb_path): youtube.thumbnails().set(videoId=res['id'], media_body=MediaFileUpload(thumb_path)).execute()
+                              print("✅ تم الرفع على يوتيوب بنجاح!")
+                          except Exception as e: print(f"❌ فشل الرفع: {e}")
+
+                  with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                      f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
+
+          if __name__ == "__main__":
+              asyncio.run(start_production())
+              print("⏱️ الجلسة مستمرة لمدة 4 ساعات...")
+              time.sleep(4 * 60 * 60)
+          EOF
+          python -u script.py
+
+      - name: 💾 Commit History
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add shows_history.txt || true
+          git commit -m "Update history" || true
+          git push || true
+
+      - name: ⏳ Persistence
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
