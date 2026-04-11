@@ -192,11 +192,10 @@ jobs:
                   except Exception: time.sleep(5)
               return ""
 
-          # ----- جلب فيديوهات متعددة لكل جملة -----
+          # ----- جلب فيديوهات متعددة لكل جملة مع التحقق من الصحة -----
           def split_into_sentences(text):
-              # تقسيم النص إلى جمل بناءً على النقاط وعلامات الاستفهام والتعجب
               sentences = re.split(r'(?<=[.!?])\s+', text)
-              sentences = [s.strip() for s in sentences if len(s.strip()) > 15]  # تجاهل الجمل القصيرة جداً
+              sentences = [s.strip() for s in sentences if len(s.strip()) > 15]
               return sentences
 
           def generate_keywords_per_sentence(story_text):
@@ -205,18 +204,14 @@ jobs:
               if not sentences:
                   return []
               
-              # نطلب من GPT كلمة مفتاحية لكل جملة دفعة واحدة
               prompt = f"القصة التالية مقسمة إلى جمل مرقمة. لكل جملة، أعط كلمة إنجليزية واحدة فقط (أو عبارة قصيرة من كلمتين) تصف مشهداً مناسباً لتلك الجملة. اكتب النتيجة كقائمة مفصولة بفواصل، كل كلمة مقابلة لنفس ترتيب الجمل.\n\n"
-              for i, sent in enumerate(sentences[:40]):  # حد أقصى 40 جملة
+              for i, sent in enumerate(sentences[:40]):
                   prompt += f"{i+1}. {sent[:100]}\n"
               
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-                  # استخراج القائمة
                   keywords = [k.strip().lower() for k in raw.split(',') if k.strip()]
-                  # التأكد من العدد
                   if len(keywords) < len(sentences):
-                      # تعبئة الباقي بكلمات عامة
                       defaults = ["dramatic scene", "cinematic shot", "emotional moment", "action clip", "sad look", "happy ending", "surprise face", "walking alone", "city street", "dark room"]
                       while len(keywords) < len(sentences):
                           keywords.append(random.choice(defaults))
@@ -224,6 +219,21 @@ jobs:
               except Exception as e:
                   print(f"⚠️ فشل استخراج الكلمات المفتاحية، سيتم استخدام كلمات عشوائية: {e}")
                   return [random.choice(["sad man", "walking alone", "dramatic sky", "city street", "arguing", "running", "dark room", "shocked face"]) for _ in sentences]
+
+          def is_valid_video(filepath):
+              """تتحقق من أن الفيديو ليس تالفاً ويمكن قراءته بواسطة moviepy"""
+              if not os.path.exists(filepath):
+                  return False
+              if os.path.getsize(filepath) < 5000:  # أقل من 5 كيلوبايت يعتبر تالفاً
+                  return False
+              try:
+                  # محاولة فتح المقطع لمدة قصيرة جداً
+                  clip = VideoFileClip(filepath)
+                  dur = clip.duration
+                  clip.close()
+                  return dur > 0.2
+              except Exception:
+                  return False
 
           def fetch_pexels_videos(keywords):
               print(f"🎥 جاري تحميل {len(keywords)} مقطع فيديو (واحد لكل جملة)...", flush=True)
@@ -233,22 +243,37 @@ jobs:
               headers = {"Authorization": api_key}
               downloaded = []
               for idx, kw in enumerate(keywords):
-                  url = f"https://api.pexels.com/videos/search?query={kw}&per_page=3&orientation=portrait"
-                  try:
-                      res = requests.get(url, headers=headers, timeout=10).json()
-                      if 'videos' in res and res['videos']:
-                          video = random.choice(res['videos'])
-                          video_files = sorted(video['video_files'], key=lambda x: x['width'], reverse=True)
-                          link = next((vf['link'] for vf in video_files if vf['width'] >= 720), video_files[0]['link'])
-                          v_data = requests.get(link, timeout=20).content
-                          fname = f"scene_{idx:03d}.mp4"
-                          with open(fname, "wb") as f: f.write(v_data)
-                          downloaded.append(fname)
-                          time.sleep(0.5)  # تجنب الضغط على API
-                  except Exception as e:
-                      print(f"⚠️ فشل تحميل فيديو للكلمة '{kw}': {e}")
-                      continue
-              print(f"✅ تم تحميل {len(downloaded)} مقطع فيديو بنجاح")
+                  success = False
+                  for attempt in range(3):  # 3 محاولات لكل كلمة
+                      if success: break
+                      url = f"https://api.pexels.com/videos/search?query={kw}&per_page=5&orientation=portrait"
+                      try:
+                          res = requests.get(url, headers=headers, timeout=10).json()
+                          if 'videos' in res and res['videos']:
+                              # جرب الفيديوهات المتاحة بالترتيب
+                              for video in res['videos']:
+                                  video_files = sorted(video['video_files'], key=lambda x: x['width'], reverse=True)
+                                  link = next((vf['link'] for vf in video_files if vf['width'] >= 720), video_files[0]['link'])
+                                  fname = f"scene_{idx:03d}_try{attempt}.mp4"
+                                  v_data = requests.get(link, timeout=20).content
+                                  with open(fname, "wb") as f:
+                                      f.write(v_data)
+                                  if is_valid_video(fname):
+                                      # إعادة تسمية الملف النهائي
+                                      final_name = f"scene_{idx:03d}.mp4"
+                                      os.rename(fname, final_name)
+                                      downloaded.append(final_name)
+                                      success = True
+                                      break
+                                  else:
+                                      os.remove(fname)  # حذف التالف
+                          time.sleep(0.5)
+                      except Exception as e:
+                          print(f"⚠️ محاولة {attempt+1} فشلت للكلمة '{kw}': {e}")
+                  if not success:
+                      print(f"⚠️ لم نتمكن من تحميل فيديو صالح للكلمة: {kw}")
+              
+              print(f"✅ تم تحميل {len(downloaded)} مقطع فيديو صالح بنجاح")
               return downloaded
 
           def generate_youtube_title(show_title, story_text):
@@ -268,7 +293,6 @@ jobs:
                   return re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
               except: return f"أحداث نارية ومشوقة! نرى كيف تغيرت الأقدار مع {show_title} كامل مترجم."
 
-          # ----- تحسين النص العربي في الصورة المصغرة (إصلاح كامل) -----
           def create_youtube_thumbnail(title_text):
               print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...", flush=True)
               font_path = "NotoNaskhArabic-Bold.ttf"
@@ -289,24 +313,16 @@ jobs:
               try: font = ImageFont.truetype(font_path, 110)
               except: font = ImageFont.load_default()
               
-              # دالة ذكية لتقسيم النص العربي مع مراعاة الشكل المعكوس
               def wrap_arabic_text(text, font, max_width):
-                  # إضافة إيموجي عشوائي
                   emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
                   text += random.choice(emojis)
-                  
-                  # نقسم إلى كلمات أولاً
                   words = text.split()
                   lines = []
                   current_line = []
-                  
                   for word in words:
-                      # جرب إضافة الكلمة للسطر الحالي
                       test_line = ' '.join(current_line + [word])
-                      # شكّل السطر تجريبياً لعرضه بشكل صحيح
                       reshaped_test = arabic_reshaper.reshape(test_line)
                       bidi_test = get_display(reshaped_test)
-                      # قياس العرض الفعلي للنص المعروض
                       if font.getlength(bidi_test) <= max_width:
                           current_line.append(word)
                       else:
@@ -316,7 +332,6 @@ jobs:
                   if current_line:
                       lines.append(' '.join(current_line))
                   
-                  # الآن لكل سطر نقوم بالتشكيل والعكس النهائي
                   reshaped_lines = []
                   for line in lines:
                       reshaped = arabic_reshaper.reshape(line)
@@ -326,23 +341,18 @@ jobs:
               
               max_width = width - 150
               wrapped_lines = wrap_arabic_text(title_text, font, max_width)
-              
               line_height = 140
               total_height = len(wrapped_lines) * line_height
               y_text = (height - total_height) / 2
               
-              for line in wrapped_lines:   # line الآن جاهز ومعكوس بشكل صحيح
+              for line in wrapped_lines:
                   text_width = font.getlength(line)
                   x_text = (width - text_width) / 2
-                  
-                  # رسم ظل سميك
                   for offset in range(3, 10, 2):
                       draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
                       draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
                       draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
                       draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
-                  
-                  # رسم النص الأساسي
                   draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
                   y_text += line_height
                   
@@ -353,7 +363,6 @@ jobs:
               if not script: return False
               print("🎙️ معالجة الصوت (بسرعة أبطأ -15%) وبناء ملف الترجمة...", flush=True)
               try:
-                  # تباطؤ الصوت بنسبة 15% (rate="-15%")
                   communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="-15%")
                   word_boundaries = []
                   with open("v.mp3", "wb") as file:
@@ -407,16 +416,18 @@ jobs:
                   draw.text((40, VID_HEIGHT - 60), "This video is for entertainment purposes only.", font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
 
-                  # استخراج كلمات مفتاحية لكل جملة
                   keywords = generate_keywords_per_sentence(script)
                   video_files = fetch_pexels_videos(keywords)
                   
                   if video_files:
                       clips = []
-                      # توزيع الوقت بالتساوي على عدد الفيديوهات التي تم تحميلها فعلاً
                       segment_dur = total_audio_time / len(video_files)
                       for vf in video_files:
                           try:
+                              # فحص إضافي قبل المعالجة
+                              if not is_valid_video(vf):
+                                  print(f"⚠️ المقطع {vf} غير صالح، سيتم تخطيه")
+                                  continue
                               clip = VideoFileClip(vf).without_audio().set_fps(VID_FPS)
                               w, h = clip.size
                               target_ratio = VID_WIDTH / VID_HEIGHT
@@ -425,7 +436,6 @@ jobs:
                               else:
                                   clip = clip.resize(width=VID_WIDTH).crop(y_center=h/2, height=VID_HEIGHT)
                               
-                              # تكرار المقطع إذا كان قصيراً لملء المدة المطلوبة
                               repeats = int(segment_dur / clip.duration) + 1
                               extended = concatenate_videoclips([clip] * repeats, method="compose").subclip(0, segment_dur)
                               clips.append(extended)
@@ -436,6 +446,7 @@ jobs:
                       if clips:
                           base = concatenate_videoclips(clips, method="compose")
                       else:
+                          print("⚠️ لم يتم تحميل أي مقطع صالح، سيتم استخدام الصورة الثابتة")
                           base = ImageClip("p.jpg").resize(height=VID_HEIGHT).crop(width=VID_WIDTH).set_duration(total_audio_time)
                   else:
                       base = ImageClip("p.jpg").resize(height=VID_HEIGHT).crop(width=VID_WIDTH).set_duration(total_audio_time)
