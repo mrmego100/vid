@@ -88,9 +88,9 @@ jobs:
           ENABLE_YOUTUBE_UPLOAD = 1 # 0 لإيقاف الرفع، 1 للتشغيل
           ENABLE_CATBOX_UPLOAD = 0  # 0 لإيقاف الرفع، 1 للتشغيل لـ Catbox
           VOICE_NARRATOR = "ar-EG-ShakirNeural" # صوت السرد الموحد
-          VID_WIDTH = 1280  # العرض
-          VID_HEIGHT = 1400 # الطول
-          VID_FPS = 30      # معدل الإطارات
+          VID_WIDTH = 720   # العرض القياسي للشورتس (سريع جداً في الرندر)
+          VID_HEIGHT = 1280 # الطول القياسي للشورتس
+          VID_FPS = 24      # معدل إطارات سينمائي يخفف الضغط على السيرفر
           
           # --- إعدادات كلمات السكربت --- #
           STORY_MIN_WORDS = 2000  # الحد الأدنى لعدد كلمات القصة
@@ -536,9 +536,9 @@ jobs:
                       
                   final_vid = final_vid.set_audio(base.audio)
                   
-                  # تم إضافة شريط التقدم وزيادة سرعة الرندر بشكل كبير جداً
-                  print("⏳ جاري الرندر النهائي للفيديو (سيظهر شريط التقدم الآن)...", flush=True)
-                  final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, logger='bar')
+                  # تم إخفاء شريط التقدم لحل مشكلة سجلات جيت هب (logger=None)
+                  print("⏳ جاري الرندر النهائي للفيديو (تم إخفاء شريط التقدم لمنع اختناق السيرفر)...", flush=True)
+                  final_vid.write_videofile("temp_out.mp4", fps=VID_FPS, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4, logger=None)
                   
                   aud.close()
                   base.close()
