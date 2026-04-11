@@ -52,6 +52,10 @@ jobs:
           
           wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
+          # حل مشكلة مجلد har_and_cookies
+          mkdir -p har_and_cookies
+          chmod 777 har_and_cookies
+          
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
           import nest_asyncio
@@ -75,6 +79,13 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
+
+          # إيقاف محاولة قراءة الكوكيز لتجنب خطأ har_and_cookies
+          try:
+              import g4f.cookies
+              g4f.cookies.browsers = []
+          except:
+              pass
 
           nest_asyncio.apply()
           urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
