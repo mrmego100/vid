@@ -65,8 +65,7 @@ jobs:
           if not hasattr(PIL.Image, 'ANTIALIAS'):
               PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
-          from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip, VideoFileClip, concatenate_videoclips
-          import moviepy.video.fx.all as vfx
+          from moviepy.editor import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips
           from datetime import datetime
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
@@ -209,7 +208,6 @@ jobs:
               
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-                  # تنظيف الاستجابة من الأرقام والأسطر الجديدة في حال أرجعها كقائمة مرقمة
                   clean_raw = re.sub(r'\d+[\.\-)]\s*', '', raw)
                   clean_raw = clean_raw.replace('\n', ',')
                   keywords = [k.strip().lower() for k in clean_raw.split(',') if k.strip() and len(k.strip()) > 2]
@@ -409,11 +407,10 @@ jobs:
               if len(script.split()) < 10: return
               
               if await process_audio_and_subs(script):
-                  print("🎬 بناء تسلسل الفيديوهات (فيديو لكل جملة)...", flush=True)
+                  print("🎬 بناء تسلسل الفيديوهات وحفظها بشكل متسلسل (لتوفير الذاكرة)...", flush=True)
                   aud = AudioFileClip("v.mp3")
                   total_audio_time = aud.duration
                   
-                  # إنشاء طبقة الـ Overlay
                   img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: 
@@ -427,10 +424,10 @@ jobs:
                   keywords = generate_keywords_per_sentence(script)
                   video_files = fetch_pexels_videos(keywords)
                   
-                  clips = []
+                  concat_lines = []
                   if video_files:
                       segment_dur = total_audio_time / max(len(video_files), 1)
-                      for vf in video_files:
+                      for idx, vf in enumerate(video_files):
                           try:
                               clip = VideoFileClip(vf).without_audio()
                               w, h = clip.size
@@ -448,8 +445,13 @@ jobs:
                               
                               repeats = int(segment_dur / clip.duration) + 1
                               extended = concatenate_videoclips([clip] * repeats, method="compose").subclip(0, segment_dur)
-                              clips.append(extended)
-                              clip.close() # تنظيف الذاكرة
+                              
+                              seg_name = f"seg_{idx}.mp4"
+                              extended.write_videofile(seg_name, fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
+                              concat_lines.append(f"file '{seg_name}'")
+                              
+                              extended.close()
+                              clip.close()
                               gc.collect()
                           except Exception as e:
                               print(f"⚠️ فشل معالجة المقطع {vf}، جاري استخدام صورة بديلة: {e}")
@@ -459,19 +461,28 @@ jobs:
                                   fallback = fallback.crop(x_center=img_w/2, width=int(img_h * target_ratio))
                               else:
                                   fallback = fallback.crop(y_center=img_h/2, height=int(img_w / target_ratio))
+                              
                               fallback = fallback.resize((VID_WIDTH, VID_HEIGHT)).set_duration(segment_dur).set_fps(VID_FPS)
-                              clips.append(fallback)
+                              seg_name = f"seg_{idx}.mp4"
+                              fallback.write_videofile(seg_name, fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
+                              concat_lines.append(f"file '{seg_name}'")
+                              fallback.close()
+                              gc.collect()
                       
-                      if clips:
-                          base = concatenate_videoclips(clips, method="compose")
+                      if concat_lines:
+                          with open("concat.txt", "w", encoding="utf-8") as f:
+                              f.write("\n".join(concat_lines))
+                          print("⚡ جاري تجميع المقاطع الخام باستخدام FFmpeg...", flush=True)
+                          os.system("ffmpeg -f concat -safe 0 -i concat.txt -c copy base_video.mp4 -loglevel error -y")
                       else:
                           base = ImageClip("p.jpg").resize((VID_WIDTH, VID_HEIGHT)).set_duration(total_audio_time).set_fps(VID_FPS)
+                          base.write_videofile("base_video.mp4", fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
+                          base.close()
                   else:
                       base = ImageClip("p.jpg").resize((VID_WIDTH, VID_HEIGHT)).set_duration(total_audio_time).set_fps(VID_FPS)
+                      base.write_videofile("base_video.mp4", fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
+                      base.close()
 
-                  print("⚡ جاري تجميع المقاطع الخام...", flush=True)
-                  base.write_videofile("base_video.mp4", fps=VID_FPS, codec="libx264", preset="ultrafast", logger=None, audio=False)
-                  base.close()
                   aud.close()
                   gc.collect()
 
