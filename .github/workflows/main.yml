@@ -38,16 +38,19 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
-          curl -sL "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf" -o arabic.ttf || true
+          # تحميل الخط العربي Amiri (يعمل 100%)
+          curl -sL "https://github.com/quranacademy/test-arabic-fonts/raw/refs/heads/master/fonts/amiri-bold.ttf" -o /tmp/amiri-bold.ttf
           sudo mkdir -p /usr/share/fonts/truetype/custom
-          sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
-          sudo fc-cache -fv || true
+          sudo cp /tmp/amiri-bold.ttf /usr/share/fonts/truetype/custom/
+          sudo fc-cache -fv
+          
+          # تحميل Robooto للإنجليزية فقط (اختياري)
+          curl -sL "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf" -o /tmp/Roboto-Bold.ttf
+          sudo cp /tmp/Roboto-Bold.ttf /usr/share/fonts/truetype/custom/ || true
           
           for i in {1..5}; do
             pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
           done
-          
-          wget --tries=5 -q https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf
           
           cat << 'EOF' > script.py
           import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
@@ -296,8 +299,23 @@ jobs:
               except: return f"أحداث نارية ومشوقة! نرى كيف تغيرت الأقدار مع {show_title} كامل مترجم."
 
           def create_youtube_thumbnail(title_text):
-              print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...", flush=True)
-              font_path = "Roboto-Bold.ttf"
+              print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية (Amiri Bold)...", flush=True)
+              # مسار الخط العربي Amiri الذي تم تحميله وتثبيته مسبقاً
+              font_path = "/usr/share/fonts/truetype/custom/amiri-bold.ttf"
+              if not os.path.exists(font_path):
+                  # محاولة إيجاد الخط في مكان آخر (احتياطي)
+                  alt_paths = [
+                      "/tmp/amiri-bold.ttf",
+                      "amiri-bold.ttf"
+                  ]
+                  for p in alt_paths:
+                      if os.path.exists(p):
+                          font_path = p
+                          break
+                  else:
+                      print("⚠️ لم يتم العثور على خط Amiri، استخدام الخط الافتراضي (قد لا يدعم العربية)")
+                      font_path = None
+              
               width, height = 1280, 720
               try:
                   img = Image.open("p.jpg").convert('RGB')
@@ -312,12 +330,19 @@ jobs:
               img.paste(overlay, (0, 0), overlay)
               draw = ImageDraw.Draw(img)
               
-              try: font = ImageFont.truetype(font_path, 110)
-              except: font = ImageFont.load_default()
+              if font_path:
+                  try:
+                      font = ImageFont.truetype(font_path, 100)  # حجم مناسب
+                  except:
+                      font = ImageFont.load_default()
+              else:
+                  font = ImageFont.load_default()
               
               def wrap_arabic_text(text, font, max_width):
+                  # إضافة إيموجي عشوائي
                   emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
                   text += random.choice(emojis)
+                  
                   words = text.split()
                   lines = []
                   current_line = []
@@ -343,7 +368,7 @@ jobs:
               
               max_width = width - 150
               wrapped_lines = wrap_arabic_text(title_text, font, max_width)
-              line_height = 140
+              line_height = 120
               total_height = len(wrapped_lines) * line_height
               y_text = (height - total_height) / 2
               
@@ -359,6 +384,7 @@ jobs:
                   y_text += line_height
                   
               img.save("thumbnail.jpg")
+              print("✅ تم إنشاء الصورة المصغرة بنجاح باستخدام خط Amiri")
               return "thumbnail.jpg"
 
           async def process_audio_and_subs(script):
@@ -391,10 +417,8 @@ jobs:
                       end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
                       text = " ".join([w["text"] for w in group])
                       
-                      # --- معالجة النص العربي للترجمة ليظهر متصلاً وغير معكوس ---
                       reshaped_text = arabic_reshaper.reshape(text)
                       bidi_text = get_display(reshaped_text)
-                      # --------------------------------------------------------
                       
                       ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{bidi_text}")
 
@@ -420,7 +444,7 @@ jobs:
                   img = Image.new('RGBA', (VID_WIDTH, VID_HEIGHT), (0, 0, 0, 0))
                   draw = ImageDraw.Draw(img)
                   try: 
-                      small_font = ImageFont.truetype("Roboto-Bold.ttf", 22)
+                      small_font = ImageFont.truetype("/usr/share/fonts/truetype/custom/Roboto-Bold.ttf", 22)
                   except: 
                       small_font = ImageFont.load_default()
                   
@@ -536,10 +560,9 @@ jobs:
 
           EOF
           
-          # تشغيل السكربت، وحتى لو فشل البايثون أو تم إنهاؤه قسرياً، يستمر السكربت للمرحلة التالية
-          python -u script.py || echo "⚠️ تم إنهاء البايثون بشكل غير متوقع (ربما بسبب الذاكرة أو خطأ آخر)."
+          # تشغيل السكربت
+          python -u script.py || echo "⚠️ تم إنهاء البايثون بشكل غير متوقع."
           
-          # نقلنا جلسة الـ 4 ساعات إلى سطر أوامر الجيت هب نفسه لضمان بقاء السيرفر حياً 100%
           echo "⏱️ الجلسة مستمرة لمدة 4 ساعات للحفاظ على اتصال السيرفر..."
           sleep 14400
 
