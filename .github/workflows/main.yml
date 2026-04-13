@@ -272,23 +272,16 @@ jobs:
               return downloaded
 
           def generate_youtube_title(show_title, story_text):
-              # Modification per user request: attractive title, character descriptions, no show title, max 100 chars
-              prompt = (f"أنت الآن خبير في كتابة عناوين يوتيوب جذابة ومثيرة. "
-                        f"اقرأ النص السردي لقصة المسلسل: '{story_text[:1000]}...' "
-                        f"وقم بتأليف عنوان يوتيوب مثير جداً وجذاب (كليك بيت) لهذه القصة، "
-                        f"بشرط أن يكون العنوان باللغة العربية فقط، "
-                        f"ولا يتجاوز 100 حرف. "
-                        f"يجب أن يكون العنوان مستوحى من أحداث القصة، "
-                        f"ويستخدم أسماء الشخصيات الرئيسية أو يصف أدوارهم (مثل 'ابنة الملياردير'، 'المتسول') "
-                        f"بشكل جذاب ومثير (مثل المثال: 'أنقذ متسول امرأة كانت تتعرض للتنمر من قبل مجموعة من الناس، دون أن يعلم أنها ابنة ملياردير!'). "
-                        f"ممنوع تماماً ذكر اسم المسلسل ({show_title}) "
-                        f"أو أي كلمات مثل 'مدبلج'، 'كامل'، 'مترجم'، 'حلقات'، 'دراما' أو أي حروف إنجليزية وأرقام. "
-                        f"اكتب جملة العنوان النهائية فقط.")
+              prompt = (f"قم بتأليف عنوان يوتيوب جذاب جداً ومثير مستوحى من أحداث القصة الحقيقية التالية. "
+                        f"استخدم أسماء الشخصيات الموجودة في القصة، ولا تذكر اسم المسلسل أبداً. "
+                        f"يجب ألا يتجاوز العنوان 100 حرف. "
+                        f"مثال على العناوين: 'أنقذ متسول امرأة كانت تتعرض للتنمر من قبل مجموعة من الناس، دون أن يعلم أنها ابنة ملياردير!'. "
+                        f"اكتب العنوان فقط باللغة العربية بدون كلمات أجنبية أو رموز: {story_text[:500]}...")
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-                  # Cleanup and truncation to meet Youtube's 100 char limit (we use 95 for safety)
+                  # تنظيف إضافي لإزالة أي كلمات غير مرغوب فيها
                   clean = re.sub(r'(مدبلج|مترجم|كامل|حلقات|مترجمة|مدبلجة|بالعربية|sub|dub|\\[|\\]|\\"|\\n)', '', raw, flags=re.IGNORECASE)
-                  clean = re.sub(r'[a-zA-Z0-9]', '', clean)  # Remove any English characters and numbers
+                  clean = re.sub(r'[a-zA-Z0-9]', '', clean)  # إزالة أي حروف إنجليزية وأرقام
                   clean = clean.strip()[:95]
                   if len(clean) < 5:
                       return "قصة مشوقة لا تفوتها"
@@ -297,31 +290,21 @@ jobs:
                   return "قصة مشوقة لا تفوتها"
 
           def generate_youtube_desc(show_title, story_text):
-              # Modification: Also generate character names or inferred roles and a proper narrative summary, while scattering the title.
               # تفريق كلمات اسم المسلسل وخلطها بشكل عشوائي مع كلمات أخرى
               words = show_title.split()
               random.shuffle(words)
               scattered = ' '.join(words)
-              
-              # Ask LLM to extract or infer characters from the narrative.
-              prompt = (f"أنت الآن راوي قصص. اكتب وصفاً سردياً قصيراً ومثيراً لفيديو يوتيوب يتحدث عن قصة المسلسل التالية: '{story_text[:1000]}...'. "
-                        f"يجب أن يتضمن الوصف أسماء الشخصيات الرئيسية أو وصفاً جذاباً لأدوارهم. "
-                        f"لا تذكر اسم المسلسل كاملاً كجملة واحدة (مثل '{show_title}'). بدلاً من ذلك، استخدم الكلمات المبعثرة التالية بشكل طبيعي داخل النص: '{scattered}'. "
-                        f"أضف كلمات 'مدبلج'، 'كامل'، 'مترجم' مبعثرة أيضاً. اكتب النص مباشرة وبدون مقدمات.")
+              prompt = (f"اكتب وصفاً قصيراً لفيديو يوتيوب. استخدم هذه الكلمات المبعثرة بشكل طبيعي داخل الوصف: '{scattered}'. "
+                        f"أضف كلمات 'مدبلج'، 'كامل'، 'مترجم' مبعثرة أيضاً. لا تذكر اسم المسلسل كاملاً بشكل متصل. اكتب الوصف مباشرة وبدون مقدمات.")
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-                  # तनظيف إضافي لإزالة أي عبارات مقدمة
                   desc = re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
-                  # Add legal notice and return
-                  final_desc = desc if len(desc) > 20 else f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
-                  return final_desc + "\n\n(ملاحظة: هذا الفيديو لأغراض ترفيهية فقط. تم سرد القصة بطريقة سردية.)"
+                  return desc if len(desc) > 20 else f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
               except: 
-                  return f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم.\n\n(ملاحظة: هذا الفيديو لأغراض ترفيهية فقط. تم سرد القصة بطريقة سردية.)"
+                  return f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
 
           def create_youtube_thumbnail(show_title, video_title):
-              # Modification per user request: Series name (top, random color), video title (bottom, white).
-              # Both with same LARGE, single font size. No small fonts.
-              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل في الأعلى بلون عشوائي، وعنوان الفيديو أسفله باللون الأبيض)...")
+              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل في الأعلى، عنوان الفيديو أسفله)...")
               font_paths = [
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
@@ -349,11 +332,11 @@ jobs:
               draw = ImageDraw.Draw(img)
               
               try:
-                  # Use a very large, single font size for both parts of the text
-                  single_large_font_size = 90
-                  font = ImageFont.truetype(font_path, single_large_font_size) if font_path else ImageFont.load_default()
+                  font = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
+                  font_small = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
               except:
                   font = ImageFont.load_default()
+                  font_small = ImageFont.load_default()
               
               def split_text(text, font, max_width):
                   words = text.split()
@@ -379,17 +362,14 @@ jobs:
               
               max_width = width - 100
               
-              # Draw series title (top, with random color)
+              # توليد لون عشوائي لاسم المسلسل
+              random_show_color = (random.randint(100, 255), random.randint(100, 255), random.randint(100, 255))
+              
+              # رسم اسم المسلسل (أعلى)
               if show_title:
                   show_lines = split_text(show_title, font, max_width)
                   y_show = 80
-                  line_height = single_large_font_size + 15
-                  
-                  # Generate a random, bright color for the show title
-                  def get_random_bright_color():
-                      return (random.randint(100, 255), random.randint(100, 255), random.randint(100, 255))
-                  random_color = get_random_bright_color()
-                  
+                  line_height_big = 110
                   for line in show_lines:
                       try:
                           bbox = font.getbbox(line)
@@ -397,37 +377,33 @@ jobs:
                       except:
                           text_width = len(line) * 55
                       x_text = (width - text_width) // 2
-                      # Outline for readability
                       for offset in range(2, 6, 2):
                           draw.text((x_text+offset, y_show+offset), line, font=font, fill=(0,0,0, 180))
                           draw.text((x_text-offset, y_show-offset), line, font=font, fill=(0,0,0, 180))
-                      # Main text in random color
-                      draw.text((x_text, y_show), line, font=font, fill=random_color)
-                      y_show += line_height
+                      draw.text((x_text, y_show), line, font=font, fill=random_show_color)
+                      y_show += line_height_big
+                  # ترك مسافة بعد اسم المسلسل
                   y_after_show = y_show + 30
               else:
                   y_after_show = 80
               
-              # Draw video title (bottom, with white color)
+              # رسم عنوان الفيديو (أسفل)
               if video_title:
-                  video_lines = split_text(video_title, font, max_width)
+                  video_lines = split_text(video_title, font_small, max_width)
                   y_video = y_after_show
-                  line_height = single_large_font_size + 15
-                  
+                  line_height_small = 110
                   for line in video_lines:
                       try:
-                          bbox = font.getbbox(line)
+                          bbox = font_small.getbbox(line)
                           text_width = bbox[2] - bbox[0]
                       except:
                           text_width = len(line) * 55
                       x_text = (width - text_width) // 2
-                      # Outline
-                      for offset in range(2, 6, 2):
-                          draw.text((x_text+offset, y_video+offset), line, font=font, fill=(0,0,0, 180))
-                          draw.text((x_text-offset, y_video-offset), line, font=font, fill=(0,0,0, 180))
-                      # Main text in white
-                      draw.text((x_text, y_video), line, font=font, fill=(255, 255, 255))
-                      y_video += line_height
+                      for offset in range(2, 5, 2):
+                          draw.text((x_text+offset, y_video+offset), line, font=font_small, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_video-offset), line, font=font_small, fill=(0,0,0, 150))
+                      draw.text((x_text, y_video), line, font=font_small, fill=(255, 255, 255))
+                      y_video += line_height_small
               
               img.save("thumbnail.jpg")
               print("✅ تم إنشاء الصورة المصغرة بنجاح")
@@ -621,4 +597,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run "Perpetual Dual" --ref ${{ git
+          gh workflow run "Perpetual Dual" --ref ${{ gi
