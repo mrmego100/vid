@@ -53,7 +53,6 @@ jobs:
           import arabic_reshaper
           from bidi.algorithm import get_display
           from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
-          import textwrap
 
           import PIL.Image
           if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -77,8 +76,8 @@ jobs:
           ENABLE_YOUTUBE_UPLOAD = 1
           ENABLE_CATBOX_UPLOAD = 0
           VOICE_NARRATOR = "ar-EG-ShakirNeural"
-          VID_WIDTH = 720
-          VID_HEIGHT = 1280
+          VID_WIDTH = 1280   # تم التغيير إلى أفقي
+          VID_HEIGHT = 720   # تم التغيير إلى أفقي
           VID_FPS = 24
           
           STORY_MIN_WORDS = 400  
@@ -243,13 +242,13 @@ jobs:
                   success = False
                   for attempt in range(3):
                       if success: break
-                      url = f"https://api.pexels.com/videos/search?query={kw}&per_page=5&orientation=portrait"
+                      url = f"https://api.pexels.com/videos/search?query={kw}&per_page=5&orientation=landscape"  # changed to landscape
                       try:
                           res = requests.get(url, headers=headers, timeout=10).json()
                           if 'videos' in res and res['videos']:
                               for video in res['videos']:
                                   video_files = sorted(video['video_files'], key=lambda x: x['width'], reverse=True)
-                                  link = next((vf['link'] for vf in video_files if vf['width'] >= 720), video_files[0]['link'])
+                                  link = next((vf['link'] for vf in video_files if vf['width'] >= 1280), video_files[0]['link'])
                                   fname = f"scene_{idx:03d}_try{attempt}.mp4"
                                   v_data = requests.get(link, timeout=20).content
                                   with open(fname, "wb") as f:
@@ -289,9 +288,8 @@ jobs:
                   return re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
               except: return f"أحداث نارية ومشوقة! نرى كيف تغيرت الأقدار مع {show_title} كامل مترجم."
 
-          def create_youtube_thumbnail(title_text):
-              print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...")
-              # البحث عن خط عربي
+          def create_youtube_thumbnail(show_title):
+              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل فقط في الأعلى)...")
               font_paths = [
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
@@ -310,38 +308,38 @@ jobs:
                   w, h = img.size
                   zoom_w, zoom_h = int(w * 0.6), int((w * 0.6) / (width / height))
                   img = img.crop(((w - zoom_w)//2, (h - zoom_h)//2, (w + zoom_w)//2, (h + zoom_h)//2))
-                  img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=25))
+                  img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=15))  # blur أضعف
               except:
                   img = Image.new('RGB', (width, height), color=(15, 15, 25))
 
-              overlay = Image.new('RGBA', (width, height), (0, 0, 0, 80))
+              overlay = Image.new('RGBA', (width, height), (0, 0, 0, 40))  # شفافية أخف
               img.paste(overlay, (0, 0), overlay)
               draw = ImageDraw.Draw(img)
               
               try:
-                  font = ImageFont.truetype(font_path, 95) if font_path else ImageFont.load_default()
+                  font = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
               except:
                   font = ImageFont.load_default()
               
-              # إضافة إيموجي
-              title_text += random.choice([" 🍿", " 🔥", " 😱", " 🎬"])
+              # استخدام اسم المسلسل الأصلي بدون أي إضافات
+              text = show_title
+              # إعادة تشكيل النص العربي فقط (بدون get_display لتجنب الانعكاس)
+              reshaped = arabic_reshaper.reshape(text)
               
-              # دالة لتقسيم النص العربي إلى أسطر بناءً على العرض الفعلي بعد إعادة التشكيل
-              def split_arabic_text(text, font, max_width):
+              # تقسيم النص إلى أسطر بناءً على العرض
+              def split_text(text, font, max_width):
                   words = text.split()
                   lines = []
                   current_line = []
                   for word in words:
                       test_line = ' '.join(current_line + [word])
-                      # إعادة تشكيل السطر التجريبي
-                      reshaped = arabic_reshaper.reshape(test_line)
-                      bidi_line = get_display(reshaped)
-                      # قياس العرض
+                      # قياس العرض التقريبي (نستخدم reshape مؤقتاً)
+                      temp_reshaped = arabic_reshaper.reshape(test_line)
                       try:
-                          bbox = font.getbbox(bidi_line)
+                          bbox = font.getbbox(temp_reshaped)
                           line_width = bbox[2] - bbox[0]
                       except:
-                          line_width = len(bidi_line) * 45  # تقريبي
+                          line_width = len(temp_reshaped) * 45
                       if line_width <= max_width:
                           current_line.append(word)
                       else:
@@ -351,20 +349,15 @@ jobs:
                   if current_line:
                       lines.append(' '.join(current_line))
                   # إعادة تشكيل كل سطر نهائي
-                  final_lines = []
-                  for line in lines:
-                      reshaped = arabic_reshaper.reshape(line)
-                      bidi_line = get_display(reshaped)
-                      final_lines.append(bidi_line)
-                  return final_lines
+                  final = [arabic_reshaper.reshape(line) for line in lines]
+                  return final
               
-              max_width = width - 150
-              lines = split_arabic_text(title_text, font, max_width)
+              max_width = width - 100
+              lines = split_text(text, font, max_width)
               
-              line_height = 120
-              total_height = len(lines) * line_height
-              y_text = (height - total_height) // 2
-              
+              # وضع النص في الأعلى (بدءاً من y = 80)
+              y_text = 80
+              line_height = 110
               for line in lines:
                   try:
                       bbox = font.getbbox(line)
@@ -372,12 +365,10 @@ jobs:
                   except:
                       text_width = len(line) * 55
                   x_text = (width - text_width) // 2
-                  # رسم الظل
-                  for offset in range(3, 10, 2):
-                      draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
-                      draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
-                      draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
-                      draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
+                  # ظل خفيف
+                  for offset in range(2, 6, 2):
+                      draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 180))
+                      draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 180))
                   draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
                   y_text += line_height
               
@@ -528,7 +519,7 @@ jobs:
                       
                       yt_title = generate_youtube_title(data['title'], script)
                       yt_desc = generate_youtube_desc(data['title'], script)
-                      thumb_path = create_youtube_thumbnail(yt_title)
+                      thumb_path = create_youtube_thumbnail(data['title'])  # نمرر اسم المسلسل الحقيقي
 
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
                           print(f"📤 جاري الرفع إلى يوتيوب...", flush=True)
