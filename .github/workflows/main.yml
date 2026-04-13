@@ -38,12 +38,9 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
-          # تحميل الخط وتسميته noto_arabic.ttf
-          curl -sL "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansArabic/NotoSansArabic-Bold.ttf" -o noto_arabic.ttf || true
-          
-          # تثبيت الخط في النظام (تأكدنا من مطابقة الاسم هنا)
+          curl -sL "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf" -o arabic.ttf || true
           sudo mkdir -p /usr/share/fonts/truetype/custom
-          sudo cp noto_arabic.ttf /usr/share/fonts/truetype/custom/ || true
+          sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
           sudo fc-cache -fv || true
           
           for i in {1..5}; do
@@ -300,7 +297,7 @@ jobs:
 
           def create_youtube_thumbnail(title_text):
               print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...", flush=True)
-              font_path = "NotoNaskhArabic-Bold.ttf"
+              font_path = "Roboto-Bold.ttf"
               width, height = 1280, 720
               try:
                   img = Image.open("p.jpg").convert('RGB')
@@ -318,7 +315,7 @@ jobs:
               try: font = ImageFont.truetype(font_path, 110)
               except: font = ImageFont.load_default()
               
-                def wrap_arabic_text(text, font, max_width):
+              def wrap_arabic_text(text, font, max_width):
                   emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
                   text += random.choice(emojis)
                   words = text.split()
@@ -344,7 +341,6 @@ jobs:
                       reshaped_lines.append(bidi_line)
                   return reshaped_lines
               
-              # استخدام ملف الخط الذي تم تحميله في الـ run
               max_width = width - 150
               wrapped_lines = wrap_arabic_text(title_text, font, max_width)
               line_height = 140
