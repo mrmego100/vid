@@ -38,7 +38,8 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
-          curl -sL "https://github.com/google/fonts/raw/main/ofl/notonaskharabic/NotoNaskhArabic-Bold.ttf" -o arabic.ttf || true
+          # استخدام خط Cairo الاحترافي للصور المصغرة لأنه ممتاز ويدعم الاتصال بشكل كامل
+          curl -sL "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf" -o arabic.ttf || true
           sudo mkdir -p /usr/share/fonts/truetype/custom
           sudo cp arabic.ttf /usr/share/fonts/truetype/custom/ || true
           sudo fc-cache -fv || true
@@ -60,6 +61,7 @@ jobs:
           import arabic_reshaper
           from bidi.algorithm import get_display
           from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
+          import PIL.features
 
           import PIL.Image
           if not hasattr(PIL.Image, 'ANTIALIAS'):
@@ -222,10 +224,8 @@ jobs:
                   return [random.choice(["sad man", "walking alone", "dramatic sky", "city street", "arguing", "running", "dark room", "shocked face"]) for _ in sentences]
 
           def is_valid_video(filepath):
-              if not os.path.exists(filepath):
-                  return False
-              if os.path.getsize(filepath) < 5000:
-                  return False
+              if not os.path.exists(filepath): return False
+              if os.path.getsize(filepath) < 5000: return False
               try:
                   clip = VideoFileClip(filepath)
                   dur = clip.duration
@@ -297,7 +297,7 @@ jobs:
 
           def create_youtube_thumbnail(title_text):
               print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...", flush=True)
-              font_path = "NotoNaskhArabic-Bold.ttf"
+              font_path = "arabic.ttf"
               width, height = 1280, 720
               try:
                   img = Image.open("p.jpg").convert('RGB')
@@ -315,55 +315,72 @@ jobs:
               try: font = ImageFont.truetype(font_path, 110)
               except: font = ImageFont.load_default()
               
+              # التحقق من وجود دعم Raqm الافتراضي في اصدارات Pillow الحديثة لدعم الـ RTL تلقائياً
+              has_raqm = PIL.features.check('raqm')
+              
               def wrap_arabic_text(text, font, max_width):
                   emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
                   text += random.choice(emojis)
                   words = text.split()
                   lines = []
                   current_line = []
-                  for word in words:
-                      test_line = ' '.join(current_line + [word])
-                      reshaped_test = arabic_reshaper.reshape(test_line)
-                      bidi_test = get_display(reshaped_test)
-                      if font.getlength(bidi_test) <= max_width:
-                          current_line.append(word)
-                      else:
-                          if current_line:
-                              lines.append(' '.join(current_line))
-                          current_line = [word]
-                  if current_line:
-                      lines.append(' '.join(current_line))
                   
-                  reshaped_lines = []
-                  for line in lines:
-                      reshaped = arabic_reshaper.reshape(line)
-                      bidi_line = get_display(reshaped)
-                      reshaped_lines.append(bidi_line)
-                  return reshaped_lines
+                  if has_raqm:
+                      # استخدام دعم Pillow المدمج (Raqm) للغة العربية الذي يقوم بالوصل والعكس تلقائياً
+                      for word in words:
+                          test_line = ' '.join(current_line + [word])
+                          if font.getlength(test_line, direction='rtl') <= max_width:
+                              current_line.append(word)
+                          else:
+                              if current_line: lines.append(' '.join(current_line))
+                              current_line = [word]
+                      if current_line: lines.append(' '.join(current_line))
+                      return lines, True
+                  else:
+                      # الطريقة القديمة كبديل في حال عدم تواجد Raqm
+                      for word in words:
+                          test_line = ' '.join(current_line + [word])
+                          reshaped_test = arabic_reshaper.reshape(test_line)
+                          bidi_test = get_display(reshaped_test)
+                          if font.getlength(bidi_test) <= max_width:
+                              current_line.append(word)
+                          else:
+                              if current_line: lines.append(' '.join(current_line))
+                              current_line = [word]
+                      if current_line: lines.append(' '.join(current_line))
+                      
+                      reshaped_lines = []
+                      for line in lines:
+                          reshaped = arabic_reshaper.reshape(line)
+                          bidi_line = get_display(reshaped)
+                          reshaped_lines.append(bidi_line)
+                      return reshaped_lines, False
               
               max_width = width - 150
-              wrapped_lines = wrap_arabic_text(title_text, font, max_width)
+              wrapped_lines, use_rtl = wrap_arabic_text(title_text, font, max_width)
               line_height = 140
               total_height = len(wrapped_lines) * line_height
               y_text = (height - total_height) / 2
               
+              kwargs = {'direction': 'rtl', 'language': 'ar'} if use_rtl else {}
+              
               for line in wrapped_lines:
-                  text_width = font.getlength(line)
+                  text_width = font.getlength(line, direction='rtl') if use_rtl else font.getlength(line)
                   x_text = (width - text_width) / 2
                   for offset in range(3, 10, 2):
-                      draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
-                      draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
-                      draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 200))
-                      draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
-                  draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
+                      draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 200), **kwargs)
+                      draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 200), **kwargs)
+                      draw.text((x_text+offset, y_text-offset), line, font=font, fill=(0,0,0, 200), **kwargs)
+                      draw.text((x_text-offset, y_text+offset), line, font=font, fill=(0,0,0, 200), **kwargs)
+                  draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255), **kwargs)
                   y_text += line_height
-                  
+              
               img.save("thumbnail.jpg")
               return "thumbnail.jpg"
 
           async def process_audio_and_subs(script):
               if not script: return False
-              print("🎙️ معالجة الصوت (بسرعة أبطأ -15%) وبناء ملف الترجمة مع تصحيح الخط العربي...", flush=True)
+              print("🎙️ معالجة الصوت (بسرعة أبطأ -15%) وبناء ملف الترجمة...", flush=True)
               try:
                   communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="-15%")
                   word_boundaries = []
@@ -391,12 +408,9 @@ jobs:
                       end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
                       text = " ".join([w["text"] for w in group])
                       
-                      # --- معالجة النص العربي للترجمة ليظهر متصلاً وغير معكوس ---
-                      reshaped_text = arabic_reshaper.reshape(text)
-                      bidi_text = get_display(reshaped_text)
-                      # --------------------------------------------------------
-                      
-                      ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{bidi_text}")
+                      # تم إزالة arabic_reshaper و get_display لأن FFmpeg (libass) يدعم العربية بشكل كامل ومباشر
+                      # تمرير النص كما هو يضمن عدم تقطع الحروف
+                      ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{text}")
 
                   with open("subs.ass", "w", encoding="utf-8") as f:
                       f.write(ass_header + "\n".join(ass_lines))
@@ -474,7 +488,7 @@ jobs:
                               concat_lines.append(f"file '{seg_name}'")
                               fallback.close()
                               gc.collect()
-                      
+                  
                       if concat_lines:
                           with open("concat.txt", "w", encoding="utf-8") as f:
                               f.write("\n".join(concat_lines))
@@ -525,8 +539,8 @@ jobs:
                               print("✅ تم الرفع على يوتيوب بنجاح!")
                           except Exception as e: print(f"❌ فشل الرفع: {e}")
 
-              with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                  f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
+          with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+              f.write(f"{data['title']}|{datetime.now().strftime('%Y-%m-%d')}\n")
 
           if __name__ == "__main__":
               try:
