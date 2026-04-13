@@ -38,14 +38,6 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
-          # لا نحتاج تحميل أي خط خارجي، سنستخدم Noto Sans Arabic المثبت مسبقاً
-          # لكن نضمن وجوده
-          if [ -f /usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf ]; then
-            echo "✅ الخط NotoSansArabic-Bold موجود"
-          else
-            echo "⚠️ الخط غير موجود، سنستخدم البديل"
-          fi
-          
           for i in {1..5}; do
             pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
           done
@@ -299,12 +291,11 @@ jobs:
 
           def create_youtube_thumbnail(title_text):
               print("🖼️ جاري تصميم الصورة المصغرة مع دعم كامل للغة العربية...")
-              # البحث عن خط عربي مثبت على النظام
+              # البحث عن خط عربي
               font_paths = [
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
                   "/usr/share/fonts/opentype/noto/NotoSansArabic-Bold.ttf",
-                  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",  # احتياطي
               ]
               font_path = None
               for p in font_paths:
@@ -313,9 +304,6 @@ jobs:
                       print(f"✅ تم العثور على الخط: {p}")
                       break
               
-              if not font_path:
-                  print("⚠️ لم يتم العثور على خط عربي، استخدام الخط الافتراضي (قد تظهر مربعات)")
-              
               width, height = 1280, 720
               try:
                   img = Image.open("p.jpg").convert('RGB')
@@ -323,42 +311,67 @@ jobs:
                   zoom_w, zoom_h = int(w * 0.6), int((w * 0.6) / (width / height))
                   img = img.crop(((w - zoom_w)//2, (h - zoom_h)//2, (w + zoom_w)//2, (h + zoom_h)//2))
                   img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=25))
-              except Exception as e:
-                  print(f"⚠️ فشل تحميل الصورة: {e}")
+              except:
                   img = Image.new('RGB', (width, height), color=(15, 15, 25))
 
               overlay = Image.new('RGBA', (width, height), (0, 0, 0, 80))
               img.paste(overlay, (0, 0), overlay)
               draw = ImageDraw.Draw(img)
               
-              # تحميل الخط بحجم مناسب
               try:
-                  font = ImageFont.truetype(font_path, 90) if font_path else ImageFont.load_default()
+                  font = ImageFont.truetype(font_path, 95) if font_path else ImageFont.load_default()
               except:
                   font = ImageFont.load_default()
               
-              # إضافة إيموجي عشوائي
-              emojis = [" 🍿", " 🔥", " 😱", " 🎬"]
-              title_text += random.choice(emojis)
+              # إضافة إيموجي
+              title_text += random.choice([" 🍿", " 🔥", " 😱", " 🎬"])
               
-              # إعادة تشكيل النص العربي
-              reshaped = arabic_reshaper.reshape(title_text)
-              bidi_text = get_display(reshaped)
+              # دالة لتقسيم النص العربي إلى أسطر بناءً على العرض الفعلي بعد إعادة التشكيل
+              def split_arabic_text(text, font, max_width):
+                  words = text.split()
+                  lines = []
+                  current_line = []
+                  for word in words:
+                      test_line = ' '.join(current_line + [word])
+                      # إعادة تشكيل السطر التجريبي
+                      reshaped = arabic_reshaper.reshape(test_line)
+                      bidi_line = get_display(reshaped)
+                      # قياس العرض
+                      try:
+                          bbox = font.getbbox(bidi_line)
+                          line_width = bbox[2] - bbox[0]
+                      except:
+                          line_width = len(bidi_line) * 45  # تقريبي
+                      if line_width <= max_width:
+                          current_line.append(word)
+                      else:
+                          if current_line:
+                              lines.append(' '.join(current_line))
+                          current_line = [word]
+                  if current_line:
+                      lines.append(' '.join(current_line))
+                  # إعادة تشكيل كل سطر نهائي
+                  final_lines = []
+                  for line in lines:
+                      reshaped = arabic_reshaper.reshape(line)
+                      bidi_line = get_display(reshaped)
+                      final_lines.append(bidi_line)
+                  return final_lines
               
-              # تقسيم النص إلى أسطر باستخدام textwrap البسيط (بدون الاعتماد على getlength)
-              # سنقسم بناءً على عدد الأحرف التقريبي (لأن getlength قد لا يعمل مع bidi)
-              max_chars_per_line = 25  # تقريبي للخط حجم 90
-              lines = textwrap.wrap(bidi_text, width=max_chars_per_line, break_long_words=False)
+              max_width = width - 150
+              lines = split_arabic_text(title_text, font, max_width)
               
-              line_height = 110
+              line_height = 120
               total_height = len(lines) * line_height
               y_text = (height - total_height) // 2
               
               for line in lines:
-                  # تقدير العرض التقريبي (بدون getlength لتجنب الأخطاء)
-                  approx_width = len(line) * 50  # تقريبي
-                  x_text = (width - approx_width) // 2
-                  
+                  try:
+                      bbox = font.getbbox(line)
+                      text_width = bbox[2] - bbox[0]
+                  except:
+                      text_width = len(line) * 55
+                  x_text = (width - text_width) // 2
                   # رسم الظل
                   for offset in range(3, 10, 2):
                       draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 200))
