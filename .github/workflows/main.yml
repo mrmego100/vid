@@ -76,8 +76,8 @@ jobs:
           ENABLE_YOUTUBE_UPLOAD = 1
           ENABLE_CATBOX_UPLOAD = 0
           VOICE_NARRATOR = "ar-EG-ShakirNeural"
-          VID_WIDTH = 1280   # تم التغيير إلى أفقي
-          VID_HEIGHT = 720   # تم التغيير إلى أفقي
+          VID_WIDTH = 1280
+          VID_HEIGHT = 720
           VID_FPS = 24
           
           STORY_MIN_WORDS = 400  
@@ -242,7 +242,7 @@ jobs:
                   success = False
                   for attempt in range(3):
                       if success: break
-                      url = f"https://api.pexels.com/videos/search?query={kw}&per_page=5&orientation=landscape"  # changed to landscape
+                      url = f"https://api.pexels.com/videos/search?query={kw}&per_page=5&orientation=landscape"
                       try:
                           res = requests.get(url, headers=headers, timeout=10).json()
                           if 'videos' in res and res['videos']:
@@ -272,24 +272,35 @@ jobs:
               return downloaded
 
           def generate_youtube_title(show_title, story_text):
-              prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لقصة. "
-                        f"مثال: 'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال'. "
-                        f"اكتب جملة العنوان فقط لا غير بدون أي إضافات: {story_text[:500]}...")
+              prompt = (f"قم بتأليف عنوان يوتيوب مثير جداً وجذاب لقصة، يكون العنوان باللغة العربية فقط، بدون أي كلمات أجنبية، بدون رموز، بدون ذكر كلمات مثل 'مدبلج' أو 'مترجم' أو 'كامل'. مثال: 'الجميع ظنه ضعيفًا! حتى رأوه يهزم أميرة الشمال'. اكتب جملة العنوان فقط لا غير: {story_text[:500]}...")
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-                  return raw.replace('"', '').replace('[', '').strip()[:95]
-              except: return "الجميع ظنه ضعيفًا! حتى رأوه يقلب الموازين ويصدم الجميع بقوته"
+                  # تنظيف إضافي لإزالة أي كلمات غير مرغوب فيها
+                  clean = re.sub(r'(مدبلج|مترجم|كامل|حلقات|مترجمة|مدبلجة|بالعربية|sub|dub|\\[|\\]|\\"|\\n)', '', raw, flags=re.IGNORECASE)
+                  clean = re.sub(r'[a-zA-Z0-9]', '', clean)  # إزالة أي حروف إنجليزية وأرقام
+                  clean = clean.strip()[:95]
+                  if len(clean) < 5:
+                      return "قصة مشوقة لا تفوتها"
+                  return clean
+              except: 
+                  return "قصة مشوقة لا تفوتها"
 
           def generate_youtube_desc(show_title, story_text):
-              prompt = (f"اكتب وصفاً لفيديو يوتيوب للقصة. خذ كلمات اسم المسلسل '{show_title}' وقم ببعثرتها بشكل طبيعي داخل الوصف. "
-                        f"أضف كلمات: 'مدبلج'، 'كامل'، 'مترجم' مبعثرة أيضاً. اكتب الوصف مباشرة وبدون مقدمات.")
+              # تفريق كلمات اسم المسلسل وخلطها بشكل عشوائي مع كلمات أخرى
+              words = show_title.split()
+              random.shuffle(words)
+              scattered = ' '.join(words)
+              prompt = (f"اكتب وصفاً قصيراً لفيديو يوتيوب. استخدم هذه الكلمات المبعثرة بشكل طبيعي داخل الوصف: '{scattered}'. "
+                        f"أضف كلمات 'مدبلج'، 'كامل'، 'مترجم' مبعثرة أيضاً. لا تذكر اسم المسلسل كاملاً بشكل متصل. اكتب الوصف مباشرة وبدون مقدمات.")
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-                  return re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
-              except: return f"أحداث نارية ومشوقة! نرى كيف تغيرت الأقدار مع {show_title} كامل مترجم."
+                  desc = re.sub(r'(حسنا|إليك|تفضل|الوصف|:\n|^\n)', '', raw, flags=re.IGNORECASE).strip()
+                  return desc if len(desc) > 20 else f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
+              except: 
+                  return f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
 
-          def create_youtube_thumbnail(show_title):
-              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل فقط في الأعلى)...")
+          def create_youtube_thumbnail(show_title, video_title):
+              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل في الأعلى، عنوان الفيديو أسفله)...")
               font_paths = [
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
@@ -308,32 +319,27 @@ jobs:
                   w, h = img.size
                   zoom_w, zoom_h = int(w * 0.6), int((w * 0.6) / (width / height))
                   img = img.crop(((w - zoom_w)//2, (h - zoom_h)//2, (w + zoom_w)//2, (h + zoom_h)//2))
-                  img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=15))  # blur أضعف
+                  img = img.resize((width, height), resample=PIL.Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=15))
               except:
                   img = Image.new('RGB', (width, height), color=(15, 15, 25))
 
-              overlay = Image.new('RGBA', (width, height), (0, 0, 0, 40))  # شفافية أخف
+              overlay = Image.new('RGBA', (width, height), (0, 0, 0, 40))
               img.paste(overlay, (0, 0), overlay)
               draw = ImageDraw.Draw(img)
               
               try:
                   font = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
+                  font_small = ImageFont.truetype(font_path, 55) if font_path else ImageFont.load_default()
               except:
                   font = ImageFont.load_default()
+                  font_small = ImageFont.load_default()
               
-              # استخدام اسم المسلسل الأصلي بدون أي إضافات
-              text = show_title
-              # إعادة تشكيل النص العربي فقط (بدون get_display لتجنب الانعكاس)
-              reshaped = arabic_reshaper.reshape(text)
-              
-              # تقسيم النص إلى أسطر بناءً على العرض
               def split_text(text, font, max_width):
                   words = text.split()
                   lines = []
                   current_line = []
                   for word in words:
                       test_line = ' '.join(current_line + [word])
-                      # قياس العرض التقريبي (نستخدم reshape مؤقتاً)
                       temp_reshaped = arabic_reshaper.reshape(test_line)
                       try:
                           bbox = font.getbbox(temp_reshaped)
@@ -348,29 +354,49 @@ jobs:
                           current_line = [word]
                   if current_line:
                       lines.append(' '.join(current_line))
-                  # إعادة تشكيل كل سطر نهائي
-                  final = [arabic_reshaper.reshape(line) for line in lines]
-                  return final
+                  return [arabic_reshaper.reshape(line) for line in lines]
               
               max_width = width - 100
-              lines = split_text(text, font, max_width)
               
-              # وضع النص في الأعلى (بدءاً من y = 80)
-              y_text = 80
-              line_height = 110
-              for line in lines:
-                  try:
-                      bbox = font.getbbox(line)
-                      text_width = bbox[2] - bbox[0]
-                  except:
-                      text_width = len(line) * 55
-                  x_text = (width - text_width) // 2
-                  # ظل خفيف
-                  for offset in range(2, 6, 2):
-                      draw.text((x_text+offset, y_text+offset), line, font=font, fill=(0,0,0, 180))
-                      draw.text((x_text-offset, y_text-offset), line, font=font, fill=(0,0,0, 180))
-                  draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
-                  y_text += line_height
+              # رسم اسم المسلسل (أعلى)
+              if show_title:
+                  show_lines = split_text(show_title, font, max_width)
+                  y_show = 80
+                  line_height_big = 110
+                  for line in show_lines:
+                      try:
+                          bbox = font.getbbox(line)
+                          text_width = bbox[2] - bbox[0]
+                      except:
+                          text_width = len(line) * 55
+                      x_text = (width - text_width) // 2
+                      for offset in range(2, 6, 2):
+                          draw.text((x_text+offset, y_show+offset), line, font=font, fill=(0,0,0, 180))
+                          draw.text((x_text-offset, y_show-offset), line, font=font, fill=(0,0,0, 180))
+                      draw.text((x_text, y_show), line, font=font, fill=(255, 255, 255))
+                      y_show += line_height_big
+                  # ترك مسافة بعد اسم المسلسل
+                  y_after_show = y_show + 30
+              else:
+                  y_after_show = 80
+              
+              # رسم عنوان الفيديو (أسفل)
+              if video_title:
+                  video_lines = split_text(video_title, font_small, max_width)
+                  y_video = y_after_show
+                  line_height_small = 70
+                  for line in video_lines:
+                      try:
+                          bbox = font_small.getbbox(line)
+                          text_width = bbox[2] - bbox[0]
+                      except:
+                          text_width = len(line) * 45
+                      x_text = (width - text_width) // 2
+                      for offset in range(2, 5, 2):
+                          draw.text((x_text+offset, y_video+offset), line, font=font_small, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_video-offset), line, font=font_small, fill=(0,0,0, 150))
+                      draw.text((x_text, y_video), line, font=font_small, fill=(255, 255, 255))
+                      y_video += line_height_small
               
               img.save("thumbnail.jpg")
               print("✅ تم إنشاء الصورة المصغرة بنجاح")
@@ -519,7 +545,7 @@ jobs:
                       
                       yt_title = generate_youtube_title(data['title'], script)
                       yt_desc = generate_youtube_desc(data['title'], script)
-                      thumb_path = create_youtube_thumbnail(data['title'])  # نمرر اسم المسلسل الحقيقي
+                      thumb_path = create_youtube_thumbnail(data['title'], yt_title)
 
                       if ENABLE_YOUTUBE_UPLOAD == 1 and 'YOUTUBE_CREDENTIALS' in os.environ:
                           print(f"📤 جاري الرفع إلى يوتيوب...", flush=True)
