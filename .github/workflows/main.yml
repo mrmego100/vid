@@ -272,17 +272,16 @@ jobs:
               return downloaded
 
           def generate_youtube_title(show_title, story_text):
-              prompt = (f"قم بتأليف عنوان يوتيوب جذاب جداً ومثير مستوحى من أحداث القصة الحقيقية التالية. "
-                        f"استخدم أسماء الشخصيات الموجودة في القصة، ولا تذكر اسم المسلسل أبداً. "
-                        f"يجب ألا يتجاوز العنوان 100 حرف. "
-                        f"مثال على العناوين: 'أنقذ متسول امرأة كانت تتعرض للتنمر من قبل مجموعة من الناس، دون أن يعلم أنها ابنة ملياردير!'. "
-                        f"اكتب العنوان فقط باللغة العربية بدون كلمات أجنبية أو رموز: {story_text[:500]}...")
+              # Prompt جديد للحصول على عنوان جذاب جدًا مثل المثال، مستوحى من القصة مع أسماء الشخصيات
+              prompt = (f"أنت كاتب محترف. بناءً على القصة التالية (التي تحتوي على أحداث وشخصيات حقيقية من المسلسل)، قم بإنشاء عنوان فيديو ليوتيوب جذاب جداً ومثير، مثل هذا المثال: 'أنقذ متسول امرأة كانت تتعرض للتنمر من قبل مجموعة من الناس، دون أن يعلم أنها ابنة ملياردير!'. "
+                        f"يجب أن يكون العنوان مستوحى من أحداث القصة، ويستخدم أسماء الشخصيات المذكورة فيها، ولا تذكر اسم المسلسل '{show_title}' إطلاقاً. "
+                        f"اكتب العنوان باللغة العربية فقط، بدون كلمات أجنبية أو رموز، وألا يتجاوز 100 حرف. القصة:\n{story_text[:1500]}...")
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
                   # تنظيف إضافي لإزالة أي كلمات غير مرغوب فيها
                   clean = re.sub(r'(مدبلج|مترجم|كامل|حلقات|مترجمة|مدبلجة|بالعربية|sub|dub|\\[|\\]|\\"|\\n)', '', raw, flags=re.IGNORECASE)
                   clean = re.sub(r'[a-zA-Z0-9]', '', clean)  # إزالة أي حروف إنجليزية وأرقام
-                  clean = clean.strip()[:95]
+                  clean = clean.strip()[:100]
                   if len(clean) < 5:
                       return "قصة مشوقة لا تفوتها"
                   return clean
@@ -304,7 +303,7 @@ jobs:
                   return f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
 
           def create_youtube_thumbnail(show_title, video_title):
-              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل في الأعلى، عنوان الفيديو أسفله)...")
+              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل بلون عشوائي، عنوان الفيديو أبيض، وكلاهما بحجم كبير وموحد)...")
               font_paths = [
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
@@ -331,12 +330,11 @@ jobs:
               img.paste(overlay, (0, 0), overlay)
               draw = ImageDraw.Draw(img)
               
+              # استخدام نفس حجم الخط الكبير (85) لكل من اسم المسلسل وعنوان الفيديو
               try:
-                  font = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
-                  font_small = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
+                  font_large = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
               except:
-                  font = ImageFont.load_default()
-                  font_small = ImageFont.load_default()
+                  font_large = ImageFont.load_default()
               
               def split_text(text, font, max_width):
                   words = text.split()
@@ -362,47 +360,47 @@ jobs:
               
               max_width = width - 100
               
-              # توليد لون عشوائي لاسم المسلسل
-              random_show_color = (random.randint(100, 255), random.randint(100, 255), random.randint(100, 255))
-              
-              # رسم اسم المسلسل (أعلى)
+              # رسم اسم المسلسل (أعلى) بلون عشوائي
               if show_title:
-                  show_lines = split_text(show_title, font, max_width)
+                  show_lines = split_text(show_title, font_large, max_width)
                   y_show = 80
                   line_height_big = 110
+                  # اختيار لون عشوائي لاسم المسلسل (تجنب الأبيض)
+                  random_color = (random.randint(50, 255), random.randint(50, 255), random.randint(50, 255))
                   for line in show_lines:
                       try:
-                          bbox = font.getbbox(line)
+                          bbox = font_large.getbbox(line)
                           text_width = bbox[2] - bbox[0]
                       except:
                           text_width = len(line) * 55
                       x_text = (width - text_width) // 2
+                      # الظلال بنفس اللون ولكن بدرجة أغمق
                       for offset in range(2, 6, 2):
-                          draw.text((x_text+offset, y_show+offset), line, font=font, fill=(0,0,0, 180))
-                          draw.text((x_text-offset, y_show-offset), line, font=font, fill=(0,0,0, 180))
-                      draw.text((x_text, y_show), line, font=font, fill=random_show_color)
+                          draw.text((x_text+offset, y_show+offset), line, font=font_large, fill=(0,0,0, 180))
+                          draw.text((x_text-offset, y_show-offset), line, font=font_large, fill=(0,0,0, 180))
+                      draw.text((x_text, y_show), line, font=font_large, fill=random_color)
                       y_show += line_height_big
                   # ترك مسافة بعد اسم المسلسل
                   y_after_show = y_show + 30
               else:
                   y_after_show = 80
               
-              # رسم عنوان الفيديو (أسفل)
+              # رسم عنوان الفيديو (أسفل) باللون الأبيض
               if video_title:
-                  video_lines = split_text(video_title, font_small, max_width)
+                  video_lines = split_text(video_title, font_large, max_width)
                   y_video = y_after_show
-                  line_height_small = 110
+                  line_height_small = 110  # نفس الارتفاع للحفاظ على التناسق
                   for line in video_lines:
                       try:
-                          bbox = font_small.getbbox(line)
+                          bbox = font_large.getbbox(line)
                           text_width = bbox[2] - bbox[0]
                       except:
                           text_width = len(line) * 55
                       x_text = (width - text_width) // 2
                       for offset in range(2, 5, 2):
-                          draw.text((x_text+offset, y_video+offset), line, font=font_small, fill=(0,0,0, 150))
-                          draw.text((x_text-offset, y_video-offset), line, font=font_small, fill=(0,0,0, 150))
-                      draw.text((x_text, y_video), line, font=font_small, fill=(255, 255, 255))
+                          draw.text((x_text+offset, y_video+offset), line, font=font_large, fill=(0,0,0, 150))
+                          draw.text((x_text-offset, y_video-offset), line, font=font_large, fill=(0,0,0, 150))
+                      draw.text((x_text, y_video), line, font=font_large, fill=(255, 255, 255))
                       y_video += line_height_small
               
               img.save("thumbnail.jpg")
@@ -597,4 +595,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run "Perpetual Dual" --ref ${{ gi
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
