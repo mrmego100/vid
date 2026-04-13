@@ -1,3 +1,48 @@
+name: Perpetual Dual
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: streaming-group
+  cancel-in-progress: true
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🧹 Delete Old Logs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 1
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 🚀 Create and Run Script
+        env:
+          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
+          
+          for i in {1..5}; do
+            pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
+          done
+          
+          cat << 'EOF' > script.py
 import os, asyncio, re, warnings, urllib3, requests, time, gc, json, random, subprocess
 import nest_asyncio
 import g4f
@@ -227,16 +272,13 @@ def fetch_pexels_videos(keywords):
     return downloaded
 
 def generate_youtube_title(show_title, story_text):
-    # Prompt جديد للحصول على عنوان جذاب جدًا مثل المثال، مستوحى من القصة مع أسماء الشخصيات
     prompt = (f"أنت كاتب محترف. بناءً على القصة التالية (التي تحتوي على أحداث وشخصيات حقيقية من المسلسل)، قم بإنشاء عنوان فيديو ليوتيوب جذاب جداً ومثير، مثل هذا المثال: 'أنقذ متسول امرأة كانت تتعرض للتنمر من قبل مجموعة من الناس، دون أن يعلم أنها ابنة ملياردير!'. "
               f"يجب أن يكون العنوان مستوحى من أحداث القصة، ويستخدم أسماء الشخصيات المذكورة فيها، ولا تذكر اسم المسلسل '{show_title}' إطلاقاً. "
               f"اكتب العنوان باللغة العربية فقط، بدون كلمات أجنبية أو رموز، وألا يتجاوز 100 حرف. القصة:\n{story_text[:1500]}...")
     try:
         raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
-        # تنظيف إضافي لإزالة أي كلمات غير مرغوب فيها
         clean = re.sub(r'(مدبلج|مترجم|كامل|حلقات|مترجمة|مدبلجة|بالعربية|sub|dub|\\[|\\]|\\"|\\n)', '', raw, flags=re.IGNORECASE)
-        clean = re.sub(r'[a-zA-Z0-9]', '', clean)  # إزالة أي حروف إنجليزية وأرقام
-        # إزالة علامات الاقتباس المزدوجة والمفردة وأي رموز غير مرغوب فيها، مع الاحتفاظ بعلامات التعجب فقط
+        clean = re.sub(r'[a-zA-Z0-9]', '', clean)
         clean = re.sub(r'["\'`]', '', clean)          # إزالة علامات الاقتباس
         clean = re.sub(r'[^\w\s!]', '', clean)        # إزالة الرموز باستثناء الحروف والمسافات وعلامات التعجب
         clean = clean.strip()[:100]
@@ -247,7 +289,6 @@ def generate_youtube_title(show_title, story_text):
         return "قصة مشوقة لا تفوتها!"
 
 def generate_youtube_desc(show_title, story_text):
-    # تفريق كلمات اسم المسلسل وخلطها بشكل عشوائي مع كلمات أخرى
     words = show_title.split()
     random.shuffle(words)
     scattered = ' '.join(words)
@@ -263,7 +304,7 @@ def generate_youtube_desc(show_title, story_text):
 def create_youtube_thumbnail(show_title, video_title):
     print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل بلون عشوائي، عنوان الفيديو أبيض، وكلاهما بحجم كبير وموحد)...")
     
-    # تنظيف اسم المسلسل من الكلمات الممنوعة (مدبلج، مترجم، رموز)
+    # تنظيف اسم المسلسل من الكلمات الممنوعة
     forbidden_words = ['مدبلج', 'مترجم', 'رموز', 'مدبلجة', 'مترجمة', 'كامل', 'حلقات', 'بالعربية']
     clean_show_title = show_title
     for word in forbidden_words:
@@ -296,7 +337,6 @@ def create_youtube_thumbnail(show_title, video_title):
     img.paste(overlay, (0, 0), overlay)
     draw = ImageDraw.Draw(img)
     
-    # استخدام نفس حجم الخط الكبير (85) لكل من اسم المسلسل وعنوان الفيديو
     try:
         font_large = ImageFont.truetype(font_path, 85) if font_path else ImageFont.load_default()
     except:
@@ -326,12 +366,10 @@ def create_youtube_thumbnail(show_title, video_title):
     
     max_width = width - 100
     
-    # رسم اسم المسلسل (أعلى) بلون عشوائي بعد تنظيفه
     if clean_show_title:
         show_lines = split_text(clean_show_title, font_large, max_width)
         y_show = 80
         line_height_big = 110
-        # اختيار لون عشوائي لاسم المسلسل (تجنب الأبيض)
         random_color = (random.randint(50, 255), random.randint(50, 255), random.randint(50, 255))
         for line in show_lines:
             try:
@@ -340,22 +378,19 @@ def create_youtube_thumbnail(show_title, video_title):
             except:
                 text_width = len(line) * 55
             x_text = (width - text_width) // 2
-            # الظلال بنفس اللون ولكن بدرجة أغمق
             for offset in range(2, 6, 2):
                 draw.text((x_text+offset, y_show+offset), line, font=font_large, fill=(0,0,0, 180))
                 draw.text((x_text-offset, y_show-offset), line, font=font_large, fill=(0,0,0, 180))
             draw.text((x_text, y_show), line, font=font_large, fill=random_color)
             y_show += line_height_big
-        # ترك مسافة بعد اسم المسلسل
         y_after_show = y_show + 30
     else:
         y_after_show = 80
     
-    # رسم عنوان الفيديو (أسفل) باللون الأبيض
     if video_title:
         video_lines = split_text(video_title, font_large, max_width)
         y_video = y_after_show
-        line_height_small = 110  # نفس الارتفاع للحفاظ على التناسق
+        line_height_small = 110
         for line in video_lines:
             try:
                 bbox = font_large.getbbox(line)
@@ -384,7 +419,7 @@ async def process_audio_and_subs(script):
                 if chunk["type"] == "audio": file.write(chunk["data"])
                 elif chunk["type"] == "WordBoundary": word_boundaries.append(chunk)
         
-        # تغيير خط الترجمة إلى نفس الخط المستخدم في العنوان (NotoSansArabic-Bold)
+        # تغيير خط الترجمة إلى NotoSansArabic-Bold (نفس خط العنوان)
         ass_header = """[Script Info]
 ScriptType: v4.00+
 [V4+ Styles]
@@ -542,3 +577,23 @@ if __name__ == "__main__":
         asyncio.run(start_production())
     except Exception as e:
         print(f"💥 حدث خطأ أثناء المعالجة: {e}", flush=True)
+EOF
+          
+          python -u script.py || echo "⚠️ تم إنهاء البايثون بشكل غير متوقع."
+          
+          echo "⏱️ الجلسة مستمرة لمدة 4 ساعات..."
+          sleep 14400
+
+      - name: 💾 Commit History
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add shows_history.txt || true
+          git commit -m "Update history" || true
+          git push || true
+
+      - name: ⏳ Persistence
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "Perpetual Dual" --ref ${{ github.ref_name }}
