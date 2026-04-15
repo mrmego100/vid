@@ -475,7 +475,7 @@ jobs:
                   except: 
                       small_font = ImageFont.load_default()
                   
-                  draw.text((40, VID_HEIGHT - 60), "This video is for entertainment purposes only.", font=small_font, fill=(255, 255, 255, 200))
+                  draw.text((40, VID_HEIGHT - 60), "", font=small_font, fill=(255, 255, 255, 200))
                   img.save("overlay.png")
 
                   keywords = generate_keywords_per_sentence(script)
