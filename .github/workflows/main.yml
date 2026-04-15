@@ -36,7 +36,8 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra fontconfig curl -q
+          fc-cache -fv
           
           for i in {1..5}; do
             pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy arabic-reshaper python-bidi -q && break || sleep 5
@@ -78,8 +79,8 @@ jobs:
           VID_HEIGHT = 720
           VID_FPS = 24
           
-          STORY_MIN_WORDS = 400  
-          STORY_MAX_WORDS = 500  
+          STORY_MIN_WORDS = 50  
+          STORY_MAX_WORDS = 70  
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
@@ -428,7 +429,6 @@ jobs:
                       response = requests.post(f"{tts_url}{voice_id}", json=payload, headers={"xi-api-key": key})
                       
                       if response.status_code == 200:
-                          # حفظ الملف الصوتي باسم v.mp3 ليتمكن باقي السكربت من التعرف عليه
                           with open("v.mp3", "wb") as f:
                               f.write(response.content)
                           print("✅ نجح توليد الصوت باستخدام ElevenLabs!")
@@ -453,20 +453,17 @@ jobs:
                       print("❌ فشل توليد الصوت من جميع مفاتيح ElevenLabs")
                       return False
 
-                  # حساب مدة الصوت لتوزيع الترجمة عليها بشكل تقريبي
                   temp_aud = AudioFileClip("v.mp3")
                   total_audio_time = temp_aud.duration
                   temp_aud.close()
                   
-                  subtitle_font_path = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
-                  if not os.path.exists(subtitle_font_path):
-                      subtitle_font_path = "/usr/share/fonts/opentype/noto/NotoSansArabic-Bold.ttf"
-                  
-                  ass_header = f"""[Script Info]
+                  # الاعتماد على اسم الخط (Noto Sans Arabic) وليس المسار ليتمكن النظام من تطبيقه بسلاسة 
+                  # تصغير حجم الخط لـ 65، وزيادة مساحات الأمان من الجوانب (MarginL=40, MarginR=40) لضمان عدم الخروج من الإطار
+                  ass_header = """[Script Info]
           ScriptType: v4.00+
           [V4+ Styles]
           Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-          Style: Default,{subtitle_font_path},70,&H00FFFFFF,&H80000000,0,0,1,3,2,2,20,20,50,1
+          Style: Default,Noto Sans Arabic,65,&H00FFFFFF,&H80000000,-1,0,1,3,2,2,40,40,50,1
           [Events]
           Format: Layer, Start, End, Style, Text
           """
@@ -475,9 +472,10 @@ jobs:
                       h, m, s = int(seconds // 3600), int((seconds % 3600) // 60), seconds % 60
                       return f"{h}:{m:02d}:{s:05.2f}"
 
-                  # تجميع الكلمات في جمل (كل 6 كلمات تقريباً للحفاظ على تدفق طبيعي)
+                  # ---------------- التعديل الجوهري لحل المشكلة ----------------
+                  # تجميع الكلمات لـ 4 كلمات فقط كحد أقصى لمنع خروجها من حدود الشاشة إطلاقاً.
                   words = script.split()
-                  chunk_size = 6
+                  chunk_size = 4
                   chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
                   
                   if chunks:
@@ -487,9 +485,11 @@ jobs:
                       for chunk in chunks:
                           start_time = current_time
                           end_time = current_time + time_per_chunk
-                          reshaped_text = arabic_reshaper.reshape(chunk)
-                          bidi_text = get_display(reshaped_text)
-                          ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{bidi_text}")
+                          
+                          # تم إزالة get_display و arabic_reshaper من هنا 
+                          # لأن مكتبة libass المستخدمة في ffmpeg تقوم بالتعديل والتشكيل التلقائي للغة العربية.
+                          # إرسال النص مقلوباً مسبقاً هو ما كان يجعله يظهر معكوساً في الفيديو.
+                          ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{chunk}")
                           current_time = end_time
 
                   with open("subs.ass", "w", encoding="utf-8") as f:
