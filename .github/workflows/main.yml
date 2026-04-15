@@ -77,10 +77,10 @@ jobs:
           ENABLE_CATBOX_UPLOAD = 0
           VID_WIDTH = 1280
           VID_HEIGHT = 720
-          VID_FPS = 24
+          VID_FPS = 30
           
-          STORY_MIN_WORDS = 50  
-          STORY_MAX_WORDS = 70  
+          STORY_MIN_WORDS = 100  
+          STORY_MAX_WORDS = 150  
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
