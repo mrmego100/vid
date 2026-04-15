@@ -39,7 +39,7 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra curl -q
           
           for i in {1..5}; do
-            pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy edge-tts arabic-reshaper python-bidi -q && break || sleep 5
+            pip install --retries 10 requests bs4 "moviepy==1.0.3" "pillow==10.2.0" g4f tqdm nest_asyncio google-api-python-client google-auth-httplib2 google-auth-oauthlib numpy scipy arabic-reshaper python-bidi -q && break || sleep 5
           done
           
           cat << 'EOF' > script.py
@@ -49,7 +49,6 @@ jobs:
           from bs4 import BeautifulSoup
           from tqdm import tqdm
           import numpy as np
-          import edge_tts
           import arabic_reshaper
           from bidi.algorithm import get_display
           from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
@@ -75,7 +74,6 @@ jobs:
           # ---------------- الإعدادات ---------------- #
           ENABLE_YOUTUBE_UPLOAD = 1
           ENABLE_CATBOX_UPLOAD = 0
-          VOICE_NARRATOR = "ar-EG-ShakirNeural"
           VID_WIDTH = 1280
           VID_HEIGHT = 720
           VID_FPS = 24
@@ -274,11 +272,11 @@ jobs:
           def generate_youtube_title(show_title, story_text):
               prompt = (f"أنت كاتب محترف. بناءً على القصة التالية (التي تحتوي على أحداث وشخصيات حقيقية من المسلسل)، قم بإنشاء عنوان فيديو ليوتيوب جذاب جداً ومثير، مثل هذا المثال: 'أنقذ متسول امرأة كانت تتعرض للتنمر من قبل مجموعة من الناس، دون أن يعلم أنها ابنة ملياردير!'. "
                         f"يجب أن يكون العنوان مستوحى من أحداث القصة، وبدون ردود منك ارسل العنوان فقط ويستخدم أسماء الشخصيات المذكورة فيها، ولا تذكر اسم المسلسل '{show_title}' إطلاقاً. "
-                        f"اكتب العنوان باللغة العربية فقط، بدون كلمات أجنبية أو رموز، وبدون علامات تنصيص ("") وألا يتجاوز 100 حرف. القصة:\n{story_text[:1500]}...")
+                        f"اكتب العنوان باللغة العربية فقط، بدون كلمات أجنبية أو رموز، وبدون علامات تنصيص (\") وألا يتجاوز 100 حرف. القصة:\n{story_text[:1500]}...")
               try:
                   raw = g4f.ChatCompletion.create(model="gpt-4", messages=[{"role":"user", "content": prompt}])
                   clean = re.sub(r'(مدبلج|مترجم|كامل|حلقات|مترجمة|مدبلجة|بالعربية|sub|dub|\\[|\\]|\\"|\\n)', '', raw, flags=re.IGNORECASE)
-                  clean = re.sub(r'[a-zA-Z0-9]', '', clean)  # إزالة أي حروف إنجليزية وأرقام
+                  clean = re.sub(r'[a-zA-Z0-9]', '', clean)
                   clean = clean.strip()[:100]
                   if len(clean) < 5:
                       return "قصة مشوقة لا تفوتها"
@@ -300,7 +298,7 @@ jobs:
                   return f"أحداث نارية ومشوقة! {scattered} كامل مدبلج مترجم."
 
           def create_youtube_thumbnail(show_title, video_title):
-              print("🖼️ جاري تصميم الصورة المصغرة (اسم المسلسل بلون عشوائي، عنوان الفيديو أبيض، وكلاهما بحجم كبير وموحد)...")
+              print("🖼️ جاري تصميم الصورة المصغرة...")
               font_paths = [
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
                   "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
@@ -356,7 +354,6 @@ jobs:
               
               max_width = width - 100
               
-              # رسم اسم المسلسل (أعلى) بلون عشوائي
               if show_title:
                   show_lines = split_text(show_title, font_large, max_width)
                   y_show = 80
@@ -378,7 +375,6 @@ jobs:
               else:
                   y_after_show = 80
               
-              # رسم عنوان الفيديو (أسفل) باللون الأبيض
               if video_title:
                   video_lines = split_text(video_title, font_large, max_width)
                   y_video = y_after_show
@@ -400,24 +396,72 @@ jobs:
               print("✅ تم إنشاء الصورة المصغرة بنجاح")
               return "thumbnail.jpg"
 
-          # ========== التعديل الأساسي: تحسين عرض الترجمة ==========
+          # ========== إضافة ElevenLabs ========== #
+          def get_remote_api_keys():
+              API_FILE_URL = "https://meja.do.am/aimp3/api.txt"
+              try:
+                  response = requests.get(API_FILE_URL)
+                  if response.status_code == 200:
+                      return [k.strip() for k in response.text.splitlines() if len(k.strip()) > 10]
+              except:
+                  return []
+
+          def generate_audio(text, api_keys):
+              tts_url = "https://api.elevenlabs.io/v1/text-to-speech/"
+              for key in api_keys:
+                  try:
+                      v_res = requests.get("https://api.elevenlabs.io/v1/voices", headers={"xi-api-key": key})
+                      if v_res.status_code != 200: continue
+                      
+                      voice_id = v_res.json()["voices"][0]["voice_id"]
+                      
+                      payload = {
+                          "text": text,
+                          "model_id": "eleven_multilingual_v2",
+                          "voice_settings": {
+                              "stability": 0.85, 
+                              "similarity_boost": 0.80, 
+                              "style": 0.0
+                          }
+                      }
+                      
+                      response = requests.post(f"{tts_url}{voice_id}", json=payload, headers={"xi-api-key": key})
+                      
+                      if response.status_code == 200:
+                          # حفظ الملف الصوتي باسم v.mp3 ليتمكن باقي السكربت من التعرف عليه
+                          with open("v.mp3", "wb") as f:
+                              f.write(response.content)
+                          print("✅ نجح توليد الصوت باستخدام ElevenLabs!")
+                          return True
+                  except Exception as e:
+                      print(f"⚠️ خطأ مع المفتاح {key}: {e}")
+                      continue
+              return False
+
+          # ========== التعديل الأساسي: تحسين عرض الترجمة ========== #
           async def process_audio_and_subs(script):
               if not script: return False
-              print("🎙️ معالجة الصوت وبناء ملف الترجمة (بخط الصورة المصغرة وتصميم احترافي)...", flush=True)
+              print("🎙️ معالجة الصوت وبناء ملف الترجمة (ElevenLabs)...", flush=True)
               try:
-                  communicate = edge_tts.Communicate(script, VOICE_NARRATOR, rate="-15%")
-                  word_boundaries = []
-                  with open("v.mp3", "wb") as file:
-                      async for chunk in communicate.stream():
-                          if chunk["type"] == "audio": file.write(chunk["data"])
-                          elif chunk["type"] == "WordBoundary": word_boundaries.append(chunk)
+                  api_keys = get_remote_api_keys()
+                  if not api_keys:
+                      print("❌ لم يتم العثور على مفاتيح API من الرابط")
+                      return False
+
+                  success = generate_audio(script, api_keys)
+                  if not success:
+                      print("❌ فشل توليد الصوت من جميع مفاتيح ElevenLabs")
+                      return False
+
+                  # حساب مدة الصوت لتوزيع الترجمة عليها بشكل تقريبي
+                  temp_aud = AudioFileClip("v.mp3")
+                  total_audio_time = temp_aud.duration
+                  temp_aud.close()
                   
-                  # تحديد مسار الخط المستخدم في الصورة المصغرة (نفس الخط)
                   subtitle_font_path = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
                   if not os.path.exists(subtitle_font_path):
                       subtitle_font_path = "/usr/share/fonts/opentype/noto/NotoSansArabic-Bold.ttf"
                   
-                  # إعدادات ASS محسنة لجعل النص جميلاً وطبيعياً
                   ass_header = f"""[Script Info]
           ScriptType: v4.00+
           [V4+ Styles]
@@ -426,28 +470,27 @@ jobs:
           [Events]
           Format: Layer, Start, End, Style, Text
           """
-                  # شرح: 
-                  # - Fontsize=70 (واضح وكبير)
-                  # - PrimaryColour = أبيض ناصع
-                  # - BackColour = أسود شفاف للظل
-                  # - Outline=3, Shadow=2 لإبراز النص
-                  # - Alignment=2 (وسط أسفل)
-                  # - MarginV=50 (مسافة من الأسفل)
-                  
                   ass_lines = []
                   def format_ass_time(seconds):
                       h, m, s = int(seconds // 3600), int((seconds % 3600) // 60), seconds % 60
                       return f"{h}:{m:02d}:{s:05.2f}"
 
                   # تجميع الكلمات في جمل (كل 6 كلمات تقريباً للحفاظ على تدفق طبيعي)
-                  for i in range(0, len(word_boundaries), 6):
-                      group = word_boundaries[i:i+6]
-                      start_time = group[0]["offset"] / 10000000
-                      end_time = (group[-1]["offset"] + group[-1]["duration"]) / 10000000 + 0.1
-                      text = " ".join([w["text"] for w in group])
-                      reshaped_text = arabic_reshaper.reshape(text)
-                      bidi_text = get_display(reshaped_text)
-                      ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{bidi_text}")
+                  words = script.split()
+                  chunk_size = 6
+                  chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+                  
+                  if chunks:
+                      time_per_chunk = total_audio_time / len(chunks)
+                      current_time = 0.0
+                      
+                      for chunk in chunks:
+                          start_time = current_time
+                          end_time = current_time + time_per_chunk
+                          reshaped_text = arabic_reshaper.reshape(chunk)
+                          bidi_text = get_display(reshaped_text)
+                          ass_lines.append(f"Dialogue: 0,{format_ass_time(start_time)},{format_ass_time(end_time)},Default,{bidi_text}")
+                          current_time = end_time
 
                   with open("subs.ass", "w", encoding="utf-8") as f:
                       f.write(ass_header + "\n".join(ass_lines))
