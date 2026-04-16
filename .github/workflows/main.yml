@@ -79,8 +79,8 @@ jobs:
           VID_HEIGHT = 720
           VID_FPS = 30
           
-          STORY_MIN_WORDS = 100  
-          STORY_MAX_WORDS = 150  
+          STORY_MIN_WORDS = 200 
+          STORY_MAX_WORDS = 250  
           
           BAD_KEYWORDS = ["logo", "icon", "avatar", "brand", "header", "footer", "button", "banner", "sign"]
           
